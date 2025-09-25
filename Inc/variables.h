@@ -165,14 +165,16 @@ extern volatile uint8_t causaError_WIFI;
 extern volatile uint8_t WIFI_conectado;
 extern volatile uint8_t conexion_TCP;
 extern uint8_t buffer_RX_desde_TCP[256];
-extern volatile uint8_t comando_TCP;
+extern volatile bool TCP_COMMAND;
 extern volatile uint8_t abre_sck_TCP;
 extern volatile uint8_t envia_msg_bienvenida_TCP;
 extern uint8_t enviar_por_conexion_BLE;
+extern volatile bool pending_TCP_conn;
 
 extern volatile uint8_t ETH_conectado;
 extern uint8_t buffer_RX_desde_TCP_ETH[256];
 extern volatile uint8_t comando_TCP_ETH;
+extern volatile uint16_t TCP_BUFF_INDEX;
 extern volatile uint8_t abre_sck_TCP_ETH;
 
 extern uint32_t Indice_A_buffer_RX_MODEM;
@@ -241,5 +243,13 @@ extern volatile char pData[256];
 extern volatile uint8_t pInd;
 extern bool mqtt_log;
 extern volatile int32_t pingData;
+
+extern volatile bool ESTADO_ALTA;
+extern volatile bool TCP_SERVER_ON; 
+extern volatile uint16_t TCP_RESTART_TIMER;
+extern volatile uint8_t TCP_connID;
+
+extern uint8_t BLE_bug_counter;
+extern uint8_t ERROR_bug_counter;
 
 #endif

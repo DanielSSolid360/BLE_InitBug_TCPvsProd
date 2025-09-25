@@ -7,6 +7,14 @@
 
 /*********** NVS memory **********/            
 extern uint8_t EspejoFlash[0x200];		//Located en 0x0801F800
+/*
+[ADDRESS]  | USE
+[0x0]      | Byte used for the bool variable ESTADO_ALTA
+[0x02]     | Byte used for the BLE bug counter variable
+[0x10]     | Start of SSID string
+[0x50]     | Start of PASSWORD string
+[0x90]     | Byte used for the bool variable GOT_CREDENTIALS	
+*/
 
 /*********** NVS variables **********/   
 typedef struct{                 //offset

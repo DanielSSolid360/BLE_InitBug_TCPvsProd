@@ -63,6 +63,14 @@ bool mqtt_log;
 
 volatile int32_t pingData;
 
+volatile bool ESTADO_ALTA; 
+volatile bool TCP_SERVER_ON; 
+volatile uint16_t TCP_RESTART_TIMER;
+volatile uint8_t TCP_connID;
+
+uint8_t BLE_bug_counter;
+uint8_t ERROR_bug_counter;
+
 void reset_variables()
 {
 	// Inicializar todas las variables a cero
@@ -87,4 +95,6 @@ void reset_variables()
 		last_RL8_Event = 0;
 		last_RL9_Event = 0;
 		last_RL10_Event = 0;
+
+	if (!ESTADO_ALTA)TCP_RESTART_TIMER = 1;
 }

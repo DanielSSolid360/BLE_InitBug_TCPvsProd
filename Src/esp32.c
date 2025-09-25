@@ -42,6 +42,14 @@ void check_BLE_status(void) //MODIFIED*
 	{ //print("THIS IS NEW FIRMWARE. OTA SUCCESFULL\r\n");
 		strcpy((void *)straux, "AT+BLEADVSTART\r\n"); 
 		Send_RS232_ESP_ACK(500,straux);
+		
+		if(ErrorEnESP)
+		{ 
+			ERROR_bug_counter++;
+			if(ERROR_bug_counter>2){ print("ERROR BUG. RESETING SYSTEM...\r\n"); HAL_NVIC_SystemReset();}
+		}
+		else ERROR_bug_counter = 0;
+
 		BLE_reconectar=NO;  //ESP-AT firmware will wait automatically for incoming connections, no need to periodically send the ADV AT command.
 		BLECONN_checkTim = 1;
 	}
@@ -79,7 +87,7 @@ void WR_en_BLE(uint8_t *data,uint8_t bytes) //MODIFIED*
 			sprintf((void *)straux, "AT+BLEGATTSIND=%c,1,7,%d\r\n",enviar_por_conexion_BLE,a); //Indicate the characteristic value from the server to a client.
 			Send_RS232_ESP_ACK(500,(void *)straux);
 			timer10MiliSeg=0;
-			while ((Recibido_Prompt_ESP==NO)&& (timer10MiliSeg < 400)){}
+			while ((Recibido_Prompt_ESP==NO)&&(timer10MiliSeg < 400)){}
 			
 			for (w=0; w<a ;w++)
 			{
@@ -93,78 +101,56 @@ void WR_en_BLE(uint8_t *data,uint8_t bytes) //MODIFIED*
 	recibido_de_conexion_BLE=0;
 }
 
-void Test_conexion_TCP(void)
+void TCP_handler(void)
 {
 	char straux[64];
-	
-	if (abre_sck_TCP==SI)
-		{
-			if (conexion_TCP==NO)
-			{
-				strcpy((void *)straux, "AT+CIPMUX=1\r\n");
-				Send_RS232_ESP_ACK(500,(void *)straux);
-			}
-			strcpy((void *)straux, "AT+CIPSERVER=1,8080\r\n");
-			Send_RS232_ESP_ACK(500,(void *)straux);
-		
-			abre_sck_TCP=NO;
-		}
-	if (abre_sck_TCP_ETH==SI)
-		{
-			if (conexion_TCP==NO)
-			{
-				strcpy((void *)straux, "AT+CIPMUX=1\r\n");
-				Send_RS232_ESP_ACK(500,(void *)straux);
-			}
-		
-			strcpy((void *)straux, "AT+CIPSERVER=1,8080\r\n");
-			Send_RS232_ESP_ACK(500,(void *)straux);
-		
-			abre_sck_TCP_ETH=NO;
-		}
-	else if (envia_msg_bienvenida_TCP==SI)
-		{
-			strcpy((void *)straux, "Conexion TCP abierta, Ok\r\n");
-			WR_en_TCP((void *)straux,strlen ((void *)straux));
-		
-			envia_msg_bienvenida_TCP=NO;
-		}
-}	
-void WR_en_TCP(uint8_t *datos,uint8_t cuantos) //PEND*
-{
-	char straux[64];
-	uint16_t w,quedan,a;
-	uint8_t *paux;
-	
-	paux=datos;
-	quedan=cuantos;
-	
-	while (1)//(quedan>0))
+
+	if(!ESTADO_ALTA && (tengo_IP_ETH || tengo_IP_WIFI) && !TCP_SERVER_ON && TCP_RESTART_TIMER>5)
 	{
-		//w=0; Redundante
-		if (quedan > 20) a=20;
-		else a=quedan;
-		sprintf((void *)straux, "AT+CIPSEND=0,%d\r\n",a); // Preparare TCP AT command to send a block of data
-		Send_RS232_ESP_ACK(500,(void *)straux);
-		timer10MiliSeg=0;
-		while ((Recibido_Prompt_ESP==NO)&& (timer10MiliSeg < 400)){}  // Esperar a recibir el prompt '>'(OK >) Ver USART1_IRQHandler()
-		//GESTIONAR EN CASO DE NO OBTENER PROMPT DE RESPUESTA 
-		for (w=0;w<20/*<a*/;w++) // Copy data to transmission buffer straux
-		{
-			if (w>quedan) break;//omitible si cambias por <a
-			straux[w]=*paux;
-			paux++;
-		}
-		straux[20/*a*/]=0; //Null terminator always in 20? not efficient for the last packet.
-		Send_RS232_ESP_ACK(500,(void *)straux);
-		//GESTIONAR EN CASO DE NO RECIBIR ACK if ErrorEnESP == SI/TRUE
-		if (quedan > 20) //Borrar if/else.  quedan -=a;
-			{
-			quedan-=20;
-			continue;
-			}
-		else break;
+		//Creating TCP server
+		//strcpy((void *)straux, "AT+CWMODE=3\r\n"); //softAP + STA mode
+		//Send_RS232_ESP_ACK(1000,(void *)straux);
+		strcpy((void *)straux, "AT+CIPMUX=1\r\n"); //Enable multiple connections. Necessary to create the TCP server
+		Send_RS232_ESP_ACK(1000,(void *)straux);
+		strcpy((void *)straux, "AT+CIPSERVER=1,64500,\"TCP\"\r\n"); //Create the TCP server on the 64500 port
+		Send_RS232_ESP_ACK(1000,(void *)straux);
+
+		if(ErrorEnESP) {TCP_SERVER_ON=false; TCP_RESTART_TIMER=1;print("TCP SERVER COULDN'T BE STARTED.\r\n"); }
+		else {TCP_SERVER_ON=true; TCP_RESTART_TIMER=0; print("TCP SERVER STARTED ON PORT 64500.\r\n"); }
 	}
+	if(ESTADO_ALTA && TCP_SERVER_ON) //Dado ya de alta, cerrar servidor TCP.
+	{		
+		strcpy((void *)straux, "AT+CIPSERVER=0,1\r\n"); //Delate the TCP server and close all conections
+		Send_RS232_ESP_ACK(1000,(void *)straux);
+		HAL_Delay(200);
+		strcpy((void *)straux, "AT+CIPMUX=0\r\n");
+		Send_RS232_ESP_ACK(1000,(void *)straux);
+
+		if(ErrorEnESP) {TCP_SERVER_ON=true; ; print("TCP SERVER COULDN'T BE CLOSED.\r\n");}
+		else {TCP_SERVER_ON=false;  print("TCP SERVER ON PORT 64500 CLOSED.\r\n");}
+
+	}
+
+}	
+void WR_en_TCP( uint8_t connID, uint8_t *data, uint16_t size) //PEND*
+{
+	char straux[64];
+
+	if(size>1024) 
+	{
+		print("Packet exceeds size limits(1024 bytes)\r\n");
+	}
+	else
+	{
+		sprintf((void *)straux, "AT+CIPSEND=%u,%u\r\n",connID,size); // Preparare TCP AT command to send a block of data
+		Send_RS232_ESP_ACK(500,(void *)straux);
+		
+		timer10MiliSeg=0;
+		while ((Recibido_Prompt_ESP==NO) && (timer10MiliSeg < 400)){}  
+		*(data+size) = 0;
+		Send_RS232_ESP_ACK(500,(void *)data);
+	}
+
 }
 
 void WR_en_MQTT(uint8_t *data, uint16_t size,uint8_t respuestaAcomando) //MODIFIED
@@ -175,9 +161,6 @@ void WR_en_MQTT(uint8_t *data, uint16_t size,uint8_t respuestaAcomando) //MODIFI
 	
 	if (estado_MQTT == CONECTADO) 
 	{
-		paux=data;
-		quedan=size;
-		
 		if (respuestaAcomando==SI) sprintf((void *)straux,"AT+MQTTPUBRAW=0,\"dt/ble10/%s/%s/\",%d,0,0\r\n",MAC_BLE,copiaUltimoCmd,size);
 	  else if(respuestaAcomando==NO && !alarm_topic) sprintf((void *)straux,"AT+MQTTPUBRAW=0,\"dt/ble10/%s/ESTADO/\",%d,0,0\r\n",MAC_BLE,size);
 		else if(respuestaAcomando==NO && alarm_topic) {sprintf((void *)straux,"AT+MQTTPUBRAW=0,\"dt/ble10/%s/ALARMA/\",%d,0,0\r\n",MAC_BLE,size); alarm_topic=false;}
@@ -266,15 +249,7 @@ void Init_ESP32(void) //Slightly modified. PEND*
 	HAL_Delay(100);
 	
 	if  (ETH_conectado  == SI || WIFI_conectado == SI) ConectarMQTT();
-	
-	strcpy((void *)straux, "AT+CWINIT=0\r\n"); Send_RS232_ESP_ACK(500,(void *)straux);
-	
-	if (tengo_IP_ETH  == NO )
-	{
-		strcpy((void *)straux, "AT+CWINIT=1\r\n"); 
-		Send_RS232_ESP_ACK(500,(void *)straux);
-	}
-		
+
 	Activar_BLE();
 	
 	strcpy((void *)straux, "AT+CWINIT=0\r\n"); Send_RS232_ESP_ACK(500,(void *)straux);
@@ -297,7 +272,7 @@ void Init_ESP32(void) //Slightly modified. PEND*
 ** ===================================================================
 */
 
-char Send_RS232_ESP_ACK(uint16_t timeout,char *data)
+uint8_t Send_RS232_ESP_ACK(uint16_t timeout,char *data)
 {
 
 	Recibido_OK_ESP = NO;
@@ -379,34 +354,40 @@ void Activar_BLE()
 	char straux[256];
 	
 	print ("Configurando BLE.....\r\n");
+	
+	strcpy((void *)straux, "AT+CWINIT=0\r\n"); Send_RS232_ESP_ACK(500,(void *)straux);	
+	HAL_Delay(100);
 
-	/*
-	strcpy((void *)straux, "AT+CWINIT=0\r\n");
-	Send_RS232_ESP_ACK(500,(void *)straux);
-	
-	strcpy((void *)straux, "AT+CWINIT=1\r\n");
-	Send_RS232_ESP_ACK(500,(void *)straux);
-	 
-	//strcpy((void *)straux, "AT+CWMODE=1\r\n"); Send_RS232_ESP_ACK(500,(void *)straux);*/
-	
+	strcpy((void *)straux, "AT+CWINIT=1\r\n"); Send_RS232_ESP_ACK(500,(void *)straux);	
+	HAL_Delay(100);
+	//strcpy((void *)straux, "AT+CWMODE=1\r\n"); Send_RS232_ESP_ACK(500,(void *)straux);
+	//HAL_Delay(100);
+
 	timer10MiliSeg = 0;
-
 	Recibido_READY_ESP32=NO;
-	
 	strcpy((void *)straux, "AT+BLEINIT=2\r\n");
-	Send_RS232_ESP_ACK(1000,(void *)straux);
+	Send_RS232_ESP_ACK(300,(void *)straux);
 
-	if ((ErrorEnESP)||(tiempoEsperaRespuesta==0)||(Recibido_READY_ESP32)) NVIC_SystemReset();	// Reseting system due to BLE module error
+	if ((ErrorEnESP)||(tiempoEsperaRespuesta==0)||(Recibido_READY_ESP32))// Reseting system due to BLE init 'ready' error
+	{
+		BLE_bug_counter++;
+		EspejoFlash[2] = BLE_bug_counter;
+		Escribe_en_flash (EspejoFlash,0,0x200);
+		
+		if(BLE_bug_counter >= 2) // Reiniciar y resetear por completo el ESP32 para solucionar el problema de que arroja "ready" cada vez que 
+		{
+			BLE_bug_counter = 0; EspejoFlash[2] = BLE_bug_counter;
+			Escribe_en_flash (EspejoFlash,0,0x200);
+			ESP_RESET();	
+		} 
+		else NVIC_SystemReset();
+	}	
+	BLE_bug_counter = 0; EspejoFlash[2] = BLE_bug_counter;
+	Escribe_en_flash (EspejoFlash,0,0x200);
 	HAL_Delay(500);
 	
-	//if (ErrorEnESP) print ("ERROR\r\n");
-	//if (Recibido_OK_ESP) printf ("RX OK\r\n");
-	//if (Recibido_Prompt_ESP) printf ("RX >\r\n");
-	//sprintf (straux,"TIEMPO %d\r\n",tiempoEsperaRespuesta);
-	//printf (straux);
-		
-	strcpy((void *)straux, "AT+BLEADDR?\r\n");
-	Send_RS232_ESP_ACK(500,(void *)straux);
+	//strcpy((void *)straux, "AT+BLEADDR?\r\n");
+	//Send_RS232_ESP_ACK(500,(void *)straux);
         
 	if (EspejoFlash[0]) sprintf((void *)straux, "AT+BLEADVDATAEX=\"Ares %s BLE10 B\",\"A002\",\"31323334\",1\r\n", MAC_BLE);
 	else sprintf((void *)straux, "AT+BLEADVDATAEX=\"Ares %s BLE10 A\",\"A002\",\"31323334\",1\r\n", MAC_BLE);
@@ -434,7 +415,7 @@ void get_BLEMAC(bool ESP32_INIT) //Created
 	{
 		strcpy((void *)straux, "AT+BLEINIT=2\r\n");
 		Send_RS232_ESP_ACK(500,(void *)straux);
-		if (ErrorEnESP) NVIC_SystemReset();	// Sin BLE reseteo el sistema
+		if (ErrorEnESP) NVIC_SystemReset();	
 	}
 	//During normal program execution we just call this command 
 	strcpy((void *)straux, "AT+BLEADDR?\r\n");
@@ -461,10 +442,14 @@ void ConectarMQTT()
 		print ("Configurando MQTT.....\r\n");
 		HAL_Delay(250);
 		
-		sprintf((void *)straux, "AT+MQTTUSERCFG=0,1,\"ble10_%s\",\"\",\"\",0,0,\"\"\r\n",MAC_BLE);
+		char uuid[30];
+		strcpy(uuid,MAC_BLE);
+		if(!ESTADO_ALTA) strcat(uuid,"_BAJA");
+
+		sprintf((void *)straux, "AT+MQTTUSERCFG=0,1,\"ble10_%s\",\"\",\"\",0,0,\"\"\r\n",uuid);
 		Send_RS232_ESP_ACK(500,(void *)straux);
         	
-		sprintf((void *)straux, "AT+MQTTCONNCFG=0,60,0,\"lwt/ble10/%s/\",\"%s_DESCONECTADO\",0,0\r\n",MAC_BLE,MAC_BLE);
+		sprintf((void *)straux, "AT+MQTTCONNCFG=0,60,0,\"lwt/ble10/%s/\",\"%s_DESCONECTADO\",0,0\r\n",uuid,uuid);
 		Send_RS232_ESP_ACK(500,(void *)straux);
         	
 		HAL_Delay(250);
@@ -512,6 +497,7 @@ void EsperaIPWifi()
 	while ((tengo_IP_WIFI==NO)&& (timer10MiliSeg < AP_CONN_TIMEOUT*100)){}
 }
 
+/***Restore factory default settings of the ESP32 module and erase STM32 flash***/
 void FACTORY_RESET()
 {
 		
@@ -528,6 +514,20 @@ void FACTORY_RESET()
 	NVIC_SystemReset();
 }
 
+/***Restore factory default settings of the ESP32 module***/
+void ESP_RESET()
+{
+		
+	Recibido_READY_ESP32=NO;
+	strcpy((void *)copiaUltimoCmd, "AT+RESTORE\r\n");
+	Send_RS232_ESP_ACK(500,(void *)copiaUltimoCmd);
+	timer10MiliSeg = 0;
+	
+	HAL_Delay(500);
+	while (Recibido_READY_ESP32 == NO && (timer10MiliSeg < 4000)){} // Wait ESP32 ready reponse
+	if(Recibido_READY_ESP32 == NO) print("ERROR DURING ESP32 MODULE RESTORE");
+	NVIC_SystemReset();
+}
 void TestReconexionMQTT()
 {
 	char straux[128];

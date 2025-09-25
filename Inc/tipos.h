@@ -50,7 +50,7 @@
 
 #define SW_VERSION	0
 #define SW_REVISION	3
-#define	SW_COMPILATION  145
+#define	SW_COMPILATION  146
 
 #define ARRANCANDO	0
 #define IDLE		1

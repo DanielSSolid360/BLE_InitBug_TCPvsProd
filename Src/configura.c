@@ -76,6 +76,11 @@ uint16_t RX_App()
 
 				sprintf((void *)straux, "AT+BLEADVDATAEX=\"Ares %s BLE10 A\",\"A002\",\"31323334\",1\r\n", MAC_BLE);
 				Send_RS232_ESP_ACK(500,(void *)straux);
+				
+				ESTADO_ALTA = true;
+				sprintf((void *)straux,"AT+MQTTCLEAN=0\r\n"); 
+				Send_RS232_ESP_ACK(500,(void *)straux);
+				ConectarMQTT();	
 			}
 			else
 			{
@@ -83,7 +88,36 @@ uint16_t RX_App()
 			}
 
 		}
+		//-------------------------------------------------------------------------------------------------------
+		// Comando BAJa
+		//-------------------------------------------------------------------------------------------------------
 
+		else if (!memcmp(param1, ".BAJ", 4))
+
+		{
+			if (EspejoFlash[0]==0)		//== 0-> ya dado de Alta, !=0 -> no se ha dado de alta 
+			{				
+				EspejoFlash[0]=0xFF;
+				sprintf((void *)buffer_out, "^BAJA OK\r\n");	
+				strcat((void *)buffer_out,MAC_BLE);
+				strcat((void *)buffer_out,"\r\nBLE10\r\n");
+				sprintf (param2,"%02d.%02d.%02d\r\n$", SW_VERSION, SW_REVISION, SW_COMPILATION);
+				strcat((void *)buffer_out,param2);
+				Escribe_en_flash (EspejoFlash,0,0x200);
+
+				sprintf((void *)straux, "AT+BLEADVDATAEX=\"Ares %s BLE10 B\",\"A002\",\"31323334\",1\r\n", MAC_BLE);
+				Send_RS232_ESP_ACK(500,(void *)straux);
+				ESTADO_ALTA = false;
+				sprintf((void *)straux,"AT+MQTTCLEAN=0\r\n"); 
+				Send_RS232_ESP_ACK(500,(void *)straux);
+				ConectarMQTT();
+				TCP_RESTART_TIMER = 1;
+			}
+			else
+			{
+				strcpy((void *)buffer_out,"^BAJA KO: EL DISPOSITIVO YA ESTA DADO DE BAJA\r\n$"); 
+			}
+		}
 		//-------------------------------------------------------------------------------------------------------
 		// Comando COP
 		//-------------------------------------------------------------------------------------------------------
@@ -107,8 +141,30 @@ uint16_t RX_App()
 			strcpy((void *)buffer_out,"Copiado\r\n"); 
 			
 		}
+		else if (!memcmp(param1, ".TCP",4))
+		{
+			if(param2[0]=='O' || param2[0]=='o')
+			{
+				strcpy((void *)straux, "AT+CIPMUX=1\r\n"); //Enable multiple connections. Necessary to create the TCP server
+				Send_RS232_ESP_ACK(1000,(void *)straux);
+				strcpy((void *)straux, "AT+CIPSERVER=1,64500,\"TCP\"\r\n"); //Create the TCP server on the 64500 port
+				Send_RS232_ESP_ACK(1000,(void *)straux);
 
+				if(ErrorEnESP) {TCP_SERVER_ON=false; ; strcpy((void *)buffer_out, "TCP SERVER COULDN'T BE STARTED.\r\n");}
+				else {TCP_SERVER_ON=true;  strcpy((void *)buffer_out, "TCP SERVER STARTED ON PORT 64500.\r\n");}
+			}
+			else if(param2[0]=='K' || param2[0]=='k')
+			{
+				strcpy((void *)straux, "AT+CIPSERVER=0,1\r\n"); //Delate the TCP server and close all conections
+				Send_RS232_ESP_ACK(1000,(void *)straux);
+				HAL_Delay(200);
+				strcpy((void *)straux, "AT+CIPMUX=0\r\n");
+				Send_RS232_ESP_ACK(1000,(void *)straux);
 
+				if(ErrorEnESP) {TCP_SERVER_ON=true; ; strcpy((void *)buffer_out, "TCP SERVER COULDN'T BE CLOSED.\r\n");}
+				else {TCP_SERVER_ON=false;  strcpy((void *)buffer_out, "TCP SERVER ON PORT 64500 CLOSED.\r\n");}
+			}
+		}
 		//-------------------------------------------------------------------------------------------------------
 		// Comando CMP
 		//-------------------------------------------------------------------------------------------------------
@@ -137,31 +193,7 @@ uint16_t RX_App()
 			
 			
 		}
-		//-------------------------------------------------------------------------------------------------------
-		// Comando BAJa
-		//-------------------------------------------------------------------------------------------------------
 
-		else if (!memcmp(param1, ".BAJ", 4))
-
-		{
-			if (EspejoFlash[0]==0)		//== 0-> ya dado de Alta, !=0 -> no se ha dado de alta 
-			{				
-				EspejoFlash[0]=0xFF;
-				sprintf((void *)buffer_out, "^BAJA OK\r\n");	
-				strcat((void *)buffer_out,MAC_BLE);
-				strcat((void *)buffer_out,"\r\nBLE10\r\n");
-				sprintf (param2,"%02d.%02d.%02d\r\n$", SW_VERSION, SW_REVISION, SW_COMPILATION);
-				strcat((void *)buffer_out,param2);
-				Escribe_en_flash (EspejoFlash,0,0x200);
-
-				sprintf((void *)straux, "AT+BLEADVDATAEX=\"Ares %s BLE10 B\",\"A002\",\"31323334\",1\r\n", MAC_BLE);
-				Send_RS232_ESP_ACK(500,(void *)straux);
-			}
-			else
-			{
-				strcpy((void *)buffer_out,"^BAJA KO: EL DISPOSITIVO YA ESTA DADO DE BAJA\r\n$"); 
-			}
-		}
 		//-------------------------------------------------------------------------------------------------------
 		// Comando DEScarga
 		//-------------------------------------------------------------------------------------------------------
@@ -323,10 +355,7 @@ uint16_t RX_App()
 					strcpy((void *)straux, "AT+BLEINIT=0\r\n");
 					Send_RS232_ESP_ACK(500,(void *)straux);
 				
-					connect2wifi(straux,(void*)param2,(void*)param3);
-					strcpy((void *)straux, "AT+CWINIT=0\r\n");
-				  Send_RS232_ESP_ACK(500,(void *)straux);
-				
+					connect2wifi(straux,(void*)param2,(void*)param3);						
 					Activar_BLE();
 			}
 			else
@@ -379,7 +408,7 @@ uint16_t RX_App()
 			{
 				strcpy((void *)straux, "AT+CIPSTA?\r\n");
 				Send_RS232_ESP_ACK(500,(void *)straux);
-				HAL_Delay(300);
+				HAL_Delay(100);
 				strcat((void *)buffer_out,IP_WIFI);
 			}
 			else strcat((void *)buffer_out,"-");
@@ -404,9 +433,9 @@ uint16_t RX_App()
 			}
 			if(WIFI_conectado || ETH_conectado) 
 			{
-				HAL_Delay(300);
+				HAL_Delay(100);
 				Send_RS232_ESP_ACK(500,"AT+CWDHCP?\r\n"); 
-				HAL_Delay(300);
+				HAL_Delay(100);
 				if (DHCP_WIFI && WIFI_conectado) strcat((void *)buffer_out,"\r\nWIFI: DHCP");
 				else if (!DHCP_WIFI && WIFI_conectado) strcat((void *)buffer_out,"\r\nWIFI: STATIC IP");
 				if (DHCP_ETH && ETH_conectado) strcat((void *)buffer_out,"\r\nETH: DHCP");
@@ -417,6 +446,9 @@ uint16_t RX_App()
 				sprintf(strP, "\r\nPING: %d",pingData);
 				strcat((void*)buffer_out,strP);  */
 			}
+
+			if(ESTADO_ALTA)strcat((void*)buffer_out,"\r\nESTADO: ALTA");
+			else strcat((void*)buffer_out,"\r\nESTADO: BAJA");
 
 			strcat((void *)buffer_out,"\r\n$");	
 		}
@@ -449,18 +481,6 @@ uint16_t RX_App()
 
 				}
 			else 	strcpy((void *)buffer_out, "ERROR de Sintaxis .LIBERA 0/1/2\r\n");
-		}
-
-		//-------------------------------------------------------------------------------------------------------
-		// Comando .TXTcp
-		//-------------------------------------------------------------------------------------------------------
-
-		else if (!memcmp(param1, ".TXT", 4))
-
-		{
-			b=strlen(param2);
-			WR_en_TCP(param2,b);
-			strcpy((void *)buffer_out, "Texto enviado\r\n");
 		}
 
 		//-------------------------------------------------------------------------------------------------------
@@ -659,6 +679,20 @@ uint16_t RX_App()
 			NVIC_SystemReset();
 		}
 
+		else if(!memcmp(param1, ".TCPSEND",8))
+		{
+			
+			sprintf((void *)straux, "AT+CIPSEND=%u\r\n",strlen(param2));
+			uint8_t ans = Send_RS232_ESP_ACK(1200,(void *)straux);
+			//strcat(param3,"\r\n");
+			if(ans==OK) 
+			{
+				Send_RS232_ESP_ACK(500,param2); 
+				sprintf((void *)buffer_out,"DATA SENT TO TCP SERVER: %s\r\n", param2);
+			}
+			else sprintf((void *)buffer_out,"Error sending TCP data\r\n");
+		}
+
 		//-------------------------------------------------------------------------------------------------------
 		// Comando .ESP SEND
 		//-------------------------------------------------------------------------------------------------------
@@ -697,7 +731,7 @@ uint16_t RX_App()
 
 				mqtt_log = false;
 			}
-			else if (!memcmp(param2, "RST", 3))
+			else if (!memcmp(param2, ".RST", 4))
 			{
 				Init_ESP32();
 				strcpy((void *)buffer_out, "ESP32 Reset OK\r\n");
@@ -733,14 +767,10 @@ uint16_t RX_App()
 *************************************************************************/
 
 void connect2wifi(uint8_t *straux, char *param2, char *param3)//Created
-{  //PENDIENTE DE HABLAR CON FREDO. QUE INCLUYA EN INSTLADORES QUE SE INFORME DEL QUE NUEVO AP ES INVALIDO
-	HAL_Delay(500);
-	strcpy((void *)straux, "AT+CWINIT=0\r\n");
-	Send_RS232_ESP_ACK(500,(void *)straux);
-	HAL_Delay(250);
+{  
 	strcpy((void *)straux, "AT+CWINIT=1\r\n");
-	Send_RS232_ESP_ACK(500,(void *)straux);
-	HAL_Delay(250);
+	Send_RS232_ESP_ACK(1000,(void *)straux);
+	HAL_Delay(150);
 	strcpy((void *)straux, "AT+CWMODE=1\r\n");
 	Send_RS232_ESP_ACK(500,(void *)straux);
 	HAL_Delay(250);								
@@ -810,7 +840,8 @@ void connect2wifi(uint8_t *straux, char *param2, char *param3)//Created
 void Pinta_VERSION()
 {
 
-	sprintf((void *)buffer_out, "^\r\n[VERSION(Idle state Solved):%02d.%02d.%02d BLE10]\r\n", SW_VERSION, SW_REVISION, SW_COMPILATION);
+	sprintf((void *)buffer_out, "^\r\n[VERSION:%02d.%02d.%02d BLE10]\r\n", SW_VERSION, SW_REVISION, SW_COMPILATION);
+	strcat((void *)buffer_out, "CONFIGURATION BY TCP SUPPORT.\r\n");
 	strcat((void *)buffer_out, "(@Ares Seguridad '25) \r\n");
 	strcat((void *)buffer_out, __DATE__);
 	strcat((void *)buffer_out, " ");

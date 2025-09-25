@@ -31,25 +31,18 @@ void Procesa_consola(void)
 		WR_en_BLE((void *)buffer_out,b);
 		LastBLECommand = 1;
 	}
-	if (comando_TCP)
-		{
+	if (TCP_COMMAND)
+	{
+		TCP_COMMAND = false;
 		strcpy((void *)buffer_in, (void *)buffer_RX_desde_TCP);
+		memset(buffer_RX_desde_TCP, 0, sizeof(buffer_RX_desde_TCP));
+		TCP_BUFF_INDEX = 0;
 		b = strlen((void *)buffer_in);
 		b = RX_App();
 		print((void *)buffer_out);
-		WR_en_TCP((void *)buffer_out,b);
-		comando_TCP = NO;
-		}
-
-	if (comando_TCP_ETH)
-		{
-		strcpy((void *)buffer_in, (void *)buffer_RX_desde_TCP);
-		b = RX_App();
-		print((void *)buffer_out);
-		WR_en_TCP((void *)buffer_out,b);
-		comando_TCP_ETH = NO;
-		}
-
+		WR_en_TCP(TCP_connID,(void *)buffer_out,b);
+		
+	}
 	if (comando_MQTT)
 	{
 		comando_MQTT = NO;

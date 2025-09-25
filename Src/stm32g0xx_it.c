@@ -255,6 +255,7 @@ void TIM14_IRQHandler(void)
 			else tiempoSinMQTT++;
 			
 			if (mqttReconTimer) mqttReconTimer++;		
+			if(TCP_RESTART_TIMER)TCP_RESTART_TIMER++;
 			
 			//BLE checktime for advtertising
 			if(BLECONN_checkTim)BLECONN_checkTim++;
@@ -272,6 +273,8 @@ void TIM14_IRQHandler(void)
 				}				
 			}
 			
+
+
 			/**************** Wait time since opening command ****************/
 			//Maximum time that system will wait since the command .ABRE is executed untill calling that the locker wasn't actually opened.
 			if(RL1_monitorTimer)RL1_monitorTimer++;
@@ -442,8 +445,62 @@ void USART1_IRQHandler(void)
 		buffer_RX_MODEM[Indice_A_buffer_RX_MODEM + 1] = 0; //String Null terminator. Not checking buffer overflow(???).The code is assuming that the buffer will never overflow.
 		laux = Indice_A_buffer_RX_MODEM;
 		Indice_A_buffer_RX_MODEM = 0;
-                 
+        
+		/*********************************************  ESP32 GENERAL  *********************************************/         
 		if (!memcmp(buffer_RX_MODEM, "OK", 2))	Recibido_OK_ESP = SI;
+		else if (!memcmp(buffer_RX_MODEM, "ready", 5)) Recibido_READY_ESP32 = SI;
+		else if (!memcmp(buffer_RX_MODEM, "busy p...", 9)) HAL_NVIC_SystemReset();
+		else if (!memcmp(buffer_RX_MODEM, "ERROR",5)) ErrorEnESP = SI; 	
+		
+	
+		/**************************************************  TCP  **************************************************/
+		else if (!memcmp(buffer_RX_MODEM, "CONNECT",7)) 
+		{
+			conexion_TCP=true; 
+			envia_msg_bienvenida_TCP=true;			
+		}
+		else if (!memcmp(buffer_RX_MODEM, "+IPD,",5))	//+IPD,0,4
+		{
+			i=5;
+			x=0;
+
+			
+			while (buffer_RX_MODEM[i]!=',')
+			{ 
+				straux[x]=buffer_RX_MODEM[i];
+				i++;x++;
+			}
+			i++;
+			straux[x] = 0;
+			sscanf((char *)straux, "%u", &w);
+			TCP_connID = (uint8_t)w;
+			w=0;
+			x=0;
+			while (buffer_RX_MODEM[i]!=':')
+			{ 
+				straux[x]=buffer_RX_MODEM[i];
+				i++;x++;
+			}
+			i++;
+			straux[x] = 0;
+			sscanf((char *)straux, "%d", &w);
+			
+			uint8_t j;
+			for (j=0; j<w; j++)
+			{ 
+				if(buffer_RX_MODEM[i+j] != '\r' && buffer_RX_MODEM[i+j] != '\n') {buffer_RX_desde_TCP[TCP_BUFF_INDEX]=buffer_RX_MODEM[i+j]; TCP_BUFF_INDEX++;}
+				else break;
+			}
+			
+			buffer_RX_desde_TCP[TCP_BUFF_INDEX]='\r';
+			buffer_RX_desde_TCP[TCP_BUFF_INDEX+1]='\n';
+			buffer_RX_desde_TCP[TCP_BUFF_INDEX+2]=0;
+		
+			TCP_COMMAND=SI;	
+			//strcpy (buffer_copia_TCP_en_BLE,buffer_RX_desde_TCP);
+			//envia_por_BLE=SI;		
+		}
+		else if (!memcmp(buffer_RX_MODEM, "0,DISCONNECT",12)) conexion_TCP=NO; 	
 		else if (!memcmp(buffer_RX_MODEM, "+HTTPCLIENT:",12))	//+HTTPCLIENT:512, (hex:01234567890123456)//It represents the size of the data recieved sent by the client				        		
 	    { //Respuesta al comando HTTPCLIENT con petición GET. Tras especificar el tamaño nos va a devolver el archivo que hemos solicitado
 			test_Conexion_ok = SI;
@@ -469,17 +526,10 @@ void USART1_IRQHandler(void)
 				if (Indice_A_buffer_RX_MODEM < sizeof(buffer_RX_MODEM)) Indice_A_buffer_RX_MODEM++;
 			}
      
-	  }
-		else if (!memcmp(buffer_RX_MODEM, "ready", 5)) Recibido_READY_ESP32 = SI;
-		else if (!memcmp(buffer_RX_MODEM, "busy p...", 9)) HAL_NVIC_SystemReset();
-		else if (!memcmp(buffer_RX_MODEM, "0,CONNECT",9)) 
-		{
-			conexion_TCP=SI; 
-			envia_msg_bienvenida_TCP=SI;			
-		}
-		else if (!memcmp(buffer_RX_MODEM, "ERROR",5)) ErrorEnESP = SI; 		
-		else if (!memcmp(buffer_RX_MODEM, "+MQTTPUB:OK",11)) pubMqttOK = SI; 
-		else if (!memcmp(buffer_RX_MODEM, "0,DISCONNECT",12)) conexion_TCP=NO; 
+	  	}
+		/****************************************************************************************************/
+
+		/**************************************************  WIFI/ETH  **************************************************/
 		else if (!memcmp(buffer_RX_MODEM, "WIFI GOT IP", 11))
 		{
 			tengo_IP_WIFI=SI;
@@ -488,17 +538,16 @@ void USART1_IRQHandler(void)
 			acaboDeRecibirIP_WIFI = true;
 			tiempoSinInternet = 0;
 			//abre_sck_TCP=SI;
+			pending_TCP_conn = true;
 		}
 		else if (!memcmp(buffer_RX_MODEM, "WIFI CONNECTED", 14))
 		{
 			WIFI_conectado = SI; 
-			//abre_sck_TCP=SI;
 		}
 		else if (!memcmp(buffer_RX_MODEM, "+CWJAP:", 7))
 		{
 			error_WIFI = SI; 
 			causaError_WIFI = buffer_RX_MODEM[7];
-			//abre_sck_TCP=SI;
 		}
 		//modem reponse to CIPSTA AT to query IP address of the ESP32 and also it gives info about gateway and netmask.  	
 		else if (!memcmp(buffer_RX_MODEM, "+CIPSTA:ip:\"", 12)) //+CIPSTA:ip:"192.168.1.17"(AT command response example)
@@ -516,38 +565,14 @@ void USART1_IRQHandler(void)
 			ETH_conectado = SI;
 			tengo_IP_ETH=SI;
 			queryIP = true;
-				for (x=0;x<16;x++)
-				{
+			pending_TCP_conn = true;
+			for (x=0;x<16;x++)
+			{
 					if ((buffer_RX_MODEM[12+x]==0x0d)||(buffer_RX_MODEM[12+x]==0x0a)) break;
 					IP_ETH[x]=buffer_RX_MODEM[12+x];
-				}
-			IP_ETH[x]=0;
-		}
-			
-		else if (!memcmp(buffer_RX_MODEM, "+PING:TIMEOUT", 13)) pingData = -1;	
-		else if (!memcmp(buffer_RX_MODEM, "+PING:", 6))	
-		{
-			char str[10];
-			uint8_t i = 0;
-			while(buffer_RX_MODEM[i + 6] != '\r' && buffer_RX_MODEM[i + 6] != '\n')
-			{
-				str[i] = buffer_RX_MODEM[i + 6];
-				i++;
-				if (i >= sizeof(str) - 1) break; //avoid overflow
 			}
-			str[i] = '\0';
-			pingData = atoi(str); 	
-
-		}
-		else if (!memcmp(buffer_RX_MODEM, "+CIPSNTPTIME:", 13))	//+CIPSNTPTIME:Thu Dec  7 17:45:44 2023
-		{
-			Captura_fecha (buffer_RX_MODEM);
-			horaActualizada = SI;
-		}
-		else if (!memcmp(buffer_RX_MODEM, "+TIME_UPDATED", 13))
-		{
-			horaActualizada = SI;
-		}
+			IP_ETH[x]=0;
+		}		
 		else if (!memcmp(buffer_RX_MODEM, "+ETH_CONNECTED", 14))
 		{
 			pending_wifi_dis = true;
@@ -569,7 +594,33 @@ void USART1_IRQHandler(void)
 			uint8_t result = buffer_RX_MODEM[8] - '0';
 			DHCP_WIFI = result & 1;
 			DHCP_ETH = (result >> 2) & 1;
-		}                             
+		}   
+		/****************************************************************************************************/	
+		else if (!memcmp(buffer_RX_MODEM, "+CIPSNTPTIME:", 13))	//+CIPSNTPTIME:Thu Dec  7 17:45:44 2023
+		{
+			Captura_fecha (buffer_RX_MODEM);
+			horaActualizada = SI;
+		}
+		else if (!memcmp(buffer_RX_MODEM, "+TIME_UPDATED", 13))
+		{
+			horaActualizada = SI;
+		}
+		else if (!memcmp(buffer_RX_MODEM, "+PING:TIMEOUT", 13)) pingData = -1;	
+		else if (!memcmp(buffer_RX_MODEM, "+PING:", 6))	
+		{
+			char str[10];
+			uint8_t i = 0;
+			while(buffer_RX_MODEM[i + 6] != '\r' && buffer_RX_MODEM[i + 6] != '\n')
+			{
+				str[i] = buffer_RX_MODEM[i + 6];
+				i++;
+				if (i >= sizeof(str) - 1) break; //avoid overflow
+			}
+			str[i] = '\0';
+			pingData = atoi(str); 	
+
+		}
+		/**************************************************  MQTT  *************************************************/
 		else if (!memcmp(buffer_RX_MODEM, "+MQTTDISCONNECTED:0", 19))
 		{
 			estado_MQTT = DESCONECTADO;
@@ -578,21 +629,53 @@ void USART1_IRQHandler(void)
 		{
 			estado_MQTT = CONECTADO;
 		}
-	
+		else if (!memcmp(buffer_RX_MODEM, "+MQTTPUB:OK",11)) pubMqttOK = SI; 
 		else if (!memcmp(buffer_RX_MODEM, "+BLEADDR:\"",10))
-			{
+		{
 			i=0;
 			for (x=0;x<18;x++)
-				{
+			{
 				if (buffer_RX_MODEM[10+x]=='\"') break;
 				if (buffer_RX_MODEM[10+x]!=':') 
 					{
 					MAC_BLE[i]=toupper(buffer_RX_MODEM[10+x]);
 					i++;
 					}
-				}
+			}
 			MAC_BLE[x]=0;
-			}                                                       //0123456789012345678901234567890123456789
+		}     
+		else if (!memcmp(buffer_RX_MODEM, "+MQTTSUBRECV:0", 14)) //+MQTTSUBRECV:0,"cmd/ble10/1122334455/",15,TRANSFIERO ESTO (//012345678901234567890123456789012345678901234567890123456789)
+		{						 
+			sprintf(straux,"cmd/ble10/%s/",MAC_BLE);						
+			a=strlen(straux);
+			if (!memcmp(buffer_RX_MODEM+16, straux , a))
+			{
+				i=18+a;
+				x=0;
+				while (buffer_RX_MODEM[i]!=',')
+				{ 
+					straux[x]=buffer_RX_MODEM[i];
+					i++;x++;
+				}
+				straux[x]=0;
+				sscanf((char *)straux, "%d", &w);
+				x=i+1;
+				for (i=0;i<w;i++)
+				{ 
+					a=buffer_RX_MODEM[x+i];
+					if ((a!=0xd)&&(a!=0xa)) buffer_RX_desde_MQTT[i+Indice_a_buffer_RX_desde_MQTT]=buffer_RX_MODEM[x+i];
+				  		else break;
+				}
+				
+				Indice_a_buffer_RX_desde_MQTT=Indice_a_buffer_RX_desde_MQTT+i;
+				buffer_RX_desde_MQTT[Indice_a_buffer_RX_desde_MQTT]='\r';
+				buffer_RX_desde_MQTT[1+Indice_a_buffer_RX_desde_MQTT]='\n';
+				buffer_RX_desde_MQTT[2+Indice_a_buffer_RX_desde_MQTT]=0;
+				Indice_a_buffer_RX_desde_MQTT=0;
+				comando_MQTT=SI;				
+			}
+		}      
+		/**************************************************  BLE  **************************************************/
 		else if (!memcmp(buffer_RX_MODEM, "+BLEDISCONN:", 12))	//+BLEDISCONN:0,"44:75:30:95:71:09" 								
 			{//MODIFIED*
 			eventos_BLE_nuevo=SI;
@@ -619,70 +702,12 @@ void USART1_IRQHandler(void)
 			//else if (buffer_RX_MODEM[9]=='2'){ BLE1=SI; strcpy((void *)buffer_eventos_BLE,"BLE conecction in 2 , with MAC address: ");}
 			strcat (buffer_eventos_BLE,buffer_RX_MODEM+11);	
 			}
-
-		else if (!memcmp(buffer_RX_MODEM, "+IPD,0,",7))	//+IPD,0,4:.VER
-								//01234567890123456		
-			{
-			i=7;
-			x=0;
-			while (buffer_RX_MODEM[i]!=':')
-				{ 
-				buffer_RX_desde_TCP[x]=buffer_RX_MODEM[i];
-				i++;x++;
-				}
-			buffer_RX_desde_TCP[x]=0;
-			sscanf((char *)buffer_RX_desde_TCP, "%d", &w);
-			for (i=0;i<w;i++)
-				{ 
-				buffer_RX_desde_TCP[i]=buffer_RX_MODEM[8+x+i];
-				}
-			buffer_RX_desde_TCP[i]='\r';
-			buffer_RX_desde_TCP[i+1]='\n';
-			buffer_RX_desde_TCP[i+2]=0;
-			comando_TCP=SI;	
-			if (buffer_RX_desde_TCP[0]!='.')
-				{
-				strcpy (buffer_copia_TCP_en_BLE,buffer_RX_desde_TCP);
-				envia_por_BLE=SI;		
-				}
-			}
     /*else if (!memcmp(buffer_RX_MODEM, "+BLECONNPARAM:",14)) //Created
 		{
 			print("Visualizing connection parameters: ");
 			print((void*)buffer_RX_MODEM);
 			print("\r\n");
 		}*/
-		else if (!memcmp(buffer_RX_MODEM, "+MQTTSUBRECV:0", 14)) //+MQTTSUBRECV:0,"cmd/ble10/1122334455/",15,TRANSFIERO ESTO (//012345678901234567890123456789012345678901234567890123456789)
-		{						 
-			sprintf(straux,"cmd/ble10/%s/",MAC_BLE);						
-			a=strlen(straux);
-			if (!memcmp(buffer_RX_MODEM+16, straux , a))
-			{
-				i=18+a;
-				x=0;
-				while (buffer_RX_MODEM[i]!=',')
-				{ 
-					straux[x]=buffer_RX_MODEM[i];
-					i++;x++;
-				}
-				straux[x]=0;
-				sscanf((char *)straux, "%d", &w);
-				x=i+1;
-				for (i=0;i<w;i++)
-				{ 
-					a=buffer_RX_MODEM[x+i];
-					if ((a!=0xd)&&(a!=0xa)) buffer_RX_desde_MQTT[i+Indice_a_buffer_RX_desde_MQTT]=buffer_RX_MODEM[x+i];
-				  else break;
-				}
-				
-				Indice_a_buffer_RX_desde_MQTT=Indice_a_buffer_RX_desde_MQTT+i;
-				buffer_RX_desde_MQTT[Indice_a_buffer_RX_desde_MQTT]='\r';
-				buffer_RX_desde_MQTT[1+Indice_a_buffer_RX_desde_MQTT]='\n';
-				buffer_RX_desde_MQTT[2+Indice_a_buffer_RX_desde_MQTT]=0;
-				Indice_a_buffer_RX_desde_MQTT=0;
-				comando_MQTT=SI;				
-			}
-		}
 
 		recibido_de_conexion_BLE=0;
 		if (!memcmp(buffer_RX_MODEM, "+WRITE:0,1,5,,", 14)) recibido_de_conexion_BLE='0';

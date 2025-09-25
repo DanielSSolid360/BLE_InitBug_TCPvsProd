@@ -111,13 +111,14 @@ volatile uint8_t causaError_WIFI;
 volatile uint8_t WIFI_conectado;
 volatile uint8_t conexion_TCP;
 uint8_t buffer_RX_desde_TCP[256];
-volatile uint8_t comando_TCP;
 volatile uint8_t abre_sck_TCP;
 volatile uint8_t envia_msg_bienvenida_TCP;
+volatile bool pending_TCP_conn;
+volatile bool TCP_COMMAND;
 
 volatile uint8_t ETH_conectado;
 uint8_t buffer_RX_desde_TCP_ETH[256];
-volatile uint8_t comando_TCP_ETH;
+volatile uint16_t TCP_BUFF_INDEX;
 volatile uint8_t abre_sck_TCP_ETH;
 
 
@@ -207,6 +208,7 @@ void print(char* string);
 
 bool system_init_done; //
 
+
 /*
 EspejoFlash[0].- Libre
 */
@@ -230,18 +232,10 @@ int main(void)
   /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
   HAL_Init();
 
-  /* USER CODE BEGIN Init */
-
-  /* USER CODE END Init */
-
   /* Configure the system clock */
   SystemClock_Config();
 
-  /* USER CODE BEGIN SysInit */
 
-  /* USER CODE END SysInit */
-
-  /* Initialize all configured peripherals */
   
   MX_USART1_UART_Init();
   MX_USART2_UART_Init();
@@ -283,7 +277,8 @@ int main(void)
   print ((void *)StrUniqueIDF);  
  
   Lee_en_flash	(EspejoFlash,0,0x200);
- 
+  ESTADO_ALTA = !(bool)(EspejoFlash[0]);
+  BLE_bug_counter = EspejoFlash[2];
   Copia_SSDI();
   Copia_PASSWORD();
 	
@@ -326,9 +321,9 @@ int main(void)
   	Procesa_consola();
   	check_BLE_status();//
 		mqtt_recon_handler();//
-  	Test_conexion_TCP();
+  	TCP_handler();
   	GPIO_STATE();
-  	Test_pedir_IP_WIFI();
+  	//Test_pedir_IP_WIFI();
   	Reenvia_TCP_por_BLE();
   	Pinta_nuevos_eventos_BLE();
   	ActualizaHora();
