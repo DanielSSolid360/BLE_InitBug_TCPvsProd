@@ -1,0 +1,864 @@
+///////////////////////////////////////////////////////////////////////////////
+// Includes
+///////////////////////////////////////////////////////////////////////////////
+// Standard C Included Files
+#include <string.h>
+#include <stdio.h>
+// SDK Included Files
+/* Including needed modules to compile this module/procedure */
+//#include "Cpu.h"
+//#include "Events.h"
+//#include "clockMan1.h"
+//#include "osa1.h"
+#include "main.h"
+#include "variables.h"
+#include "prg_flash.h"
+#include "tipos.h"
+#include "upgrade.h"
+#include "stm32g0xx_hal.h"
+#define ADC_ENABLE_TIMEOUT (2UL)
+#define ADC_DISABLE_TIMEOUT (2UL)
+#define ADC_STOP_CONVERSION_TIMEOUT (2UL)
+#define ADC_CHANNEL_CONF_RDY_TIMEOUT (1UL)
+
+#define DATA_64 ((uint64_t)0x1234567812345678)
+
+#define HAL_IWDG_DEFAULT_TIMEOUT (((6UL * 256UL * 1000UL) / LSI_VALUE) + ((LSI_STARTUP_TIME / 1000UL) + 1UL))
+#define IWDG_KERNEL_UPDATE_FLAGS (IWDG_SR_WVU | IWDG_SR_RVU | IWDG_SR_PVU)
+
+// void AA_Hazupgrade(void)
+//{
+//     Upgrade();
+// }
+
+int longitud(char cadena[])
+{
+  int i;
+
+  for (i = 0; cadena[i] != '\0'; i++)
+    ;
+  return i;
+}
+
+char concatena(char cadena1[], char cadena2[])
+{
+  char i, j, k;
+
+  j = longitud(cadena1);
+  k = longitud(cadena2);
+
+  for (i = 0; i <= k; i++)
+  {
+    cadena1[j + i] = cadena2[i];
+  }
+  return (j + k);
+}
+
+void copiar(char cadena1[], char cadena2[])
+{
+  char i, k;
+
+  k = longitud(cadena2);
+
+  for (i = 0; i <= k; i++)
+  {
+    cadena1[i] = cadena2[i];
+  }
+}
+
+void AA_Hazupgrade(uint32_t HUART2, uint32_t HUART1, uint32_t HIWDG)
+{
+
+  //	byte  message8[5];
+  //
+  //	message8[0]='1';
+  //	message8[1]='2';
+  //	message8[2]='3';
+  //	message8[3]='\r';
+  //	message8[4]='\n';
+  //
+  //	HAL_UART_TransmitUPG(HUART2,message8,5, 100);
+  //
+  //	static byte message1[] = "AT+CFTRANTX=\"c:/modem_mexico.bin\",";
+  //	static byte message2[] = ",512\r";
+  //	static byte message3[] = "AT+CFTRANTX=\"c:/modem_mexico.bin\",0,512\r";
+  //	static byte message4[] = "\r\n";
+  //	static byte message5[] = "Boot borrado OK\r\n";
+  //	static byte message6[] = "Iniciando grabacion....\r\n";
+  volatile char buffer_even[0x200] __attribute__((aligned(16)));
+  //long posicionFichero;
+  //char aTx;
+  //char numeroEnAscii[8];
+  //char aTransmitir[50];
+  //byte recibido[32];
+  //byte transmitido[2];
+  //char suceso;
+  uint16_t t55v;
+  char error;
+  uint32_t PAGEError;
+  int x;
+  __IO uint8_t data = 0;
+  uint64_t *Data;
+  uint32_t StartPageAddress;
+  uint32_t AddressGrabada;
+  uint32_t l;
+  error = 1;
+  int sofar = 0;
+  __disable_irq();
+
+  // HAL_UART_TransmitUPG(HUART2,message6,25, 100);
+  HAL_UART_TransmitUPG(HUART2, "Iniciando grabacion....\r\n", 25, 100);
+#ifndef EN_DEBUG
+  HAL_IWDG_RefreshUPG(HIWDG);
+#endif
+  
+  AddressGrabada = 0x08000000;
+  StartPageAddress = 0x08000000;
+  posicionFichero = 0;
+
+  error = BorrarDe0000a1E000(HIWDG); // 1 indica ERROR
+  HAL_UART_TransmitUPG(HUART2, "Boot borrado OK\r\n", 17, 100);
+  
+  while (AddressGrabada < 0x08008000)
+  {
+#ifndef EN_DEBUG
+  HAL_IWDG_RefreshUPG(HIWDG);
+#endif
+    copiar(aTransmitir, "AT+FS=0,2,\"FW_BLE10.BIN\",");
+    MiIntToAscii(numeroEnAscii, posicionFichero);
+    longitud(aTransmitir);
+    concatena(aTransmitir, numeroEnAscii);
+    aTx = concatena(aTransmitir, ",512\r\n");
+
+    Data = (void *)buffer_even;
+    HAL_UART_TransmitUPG(HUART1, aTransmitir, aTx, 100);
+    HAL_UART_TransmitUPG(HUART2, aTransmitir, aTx, 100);
+    suceso = HAL_UART_ReceiveUPG(HUART1, recibido, 8, 100); // +FS:512,
+    suceso = HAL_UART_ReceiveUPG(HUART1, buffer_even, 512, 100);
+    suceso = HAL_UART_ReceiveUPG(HUART1, recibido,6, 100); // 0d0a OK 0d0a
+#ifndef EN_DEBUG
+  HAL_IWDG_RefreshUPG(HIWDG);
+#endif
+    // HAL_UART_TransmitUPG(HUART2,"\r\n",2, 100);
+
+    AddressGrabada += 0x200;
+    posicionFichero += 0x200;
+
+    sofar = 0;
+
+    // while (1){}
+    while (sofar < 0x40)
+    {
+      HAL_FLASH_ProgramUPG(FLASH_TYPEPROGRAM_DOUBLEWORD, StartPageAddress, Data[sofar], HIWDG);
+      StartPageAddress += 8; // use StartPageAddress += 2 for half uint16_t and 8 for double uint16_t
+      sofar++;
+    }
+  }
+
+  HAL_UART_TransmitUPG(HUART2, "\r\nGrabacion Finalizada....\r\n", 28, 100);
+  __NVIC_SystemReset();
+
+}
+
+uint32_t GetPageUPG(uint32_t Addr)
+{
+  return (Addr - FLASH_BASE) / FLASH_PAGE_SIZE;
+  ;
+}
+
+HAL_StatusTypeDef HAL_FLASHEx_EraseUPG(FLASH_EraseInitTypeDef *pEraseInit, uint32_t *PageError, uint32_t HIWDG)
+{
+  HAL_StatusTypeDef status;
+  uint32_t index;
+
+  /* Check the parameters */
+  assert_param(IS_FLASH_TYPEERASE(pEraseInit->TypeErase));
+
+  /* Process Locked */
+  //__HAL_LOCK(&pFlash);
+
+  /* Reset error code */
+  // pFlash.ErrorCode = HAL_FLASH_ERROR_NONE;
+
+  /* Wait for last operation to be completed */
+  status = FLASH_WaitForLastOperationUPG(FLASH_TIMEOUT_VALUE, HIWDG);
+
+  status = HAL_OK;
+
+  if (status == HAL_OK)
+  {
+#if !defined(FLASH_DBANK_SUPPORT)
+    /* For single bank product force Banks to Bank 1 */
+    pEraseInit->Banks = FLASH_BANK_1;
+#endif /* FLASH_DBANK_SUPPORT */
+
+    if (pEraseInit->TypeErase == FLASH_TYPEERASE_MASS)
+    {
+      /* Proceed to Mass Erase */
+      FLASH_MassEraseUPG(pEraseInit->Banks);
+
+      /* Wait for last operation to be completed */
+      status = FLASH_WaitForLastOperationUPG(FLASH_TIMEOUT_VALUE, HIWDG);
+    }
+    else
+    {
+      /*Initialization of PageError variable*/
+      *PageError = 0xFFFFFFFFU;
+
+      for (index = pEraseInit->Page; index < (pEraseInit->Page + pEraseInit->NbPages); index++)
+      {
+#ifndef EN_DEBUG
+  HAL_IWDG_RefreshUPG(HIWDG);
+#endif
+        /* Start erase page */
+        FLASH_PageEraseUPG(pEraseInit->Banks, index);
+
+        /* Wait for last operation to be completed */
+        status = FLASH_WaitForLastOperationUPG(FLASH_TIMEOUT_VALUE, HIWDG);
+
+        if (status != HAL_OK)
+        {
+          /* In case of error, stop erase procedure and return the faulty address */
+          *PageError = index;
+          break;
+        }
+      }
+
+      /* If operation is completed or interrupted, disable the Page Erase Bit */
+      CLEAR_BIT(FLASH->CR, FLASH_CR_PER);
+    }
+  }
+
+  /* Process Unlocked */
+  //__HAL_UNLOCK(&pFlash);
+
+  /* return status */
+  return status;
+}
+
+void DelayUPG(uint32_t retraso, uint32_t HIWDG)
+{
+  volatile int VariableDelay;
+  // if (VarDelay<retraso)
+  VariableDelay = retraso * 50;
+#ifndef EN_DEBUG
+  HAL_IWDG_RefreshUPG(HIWDG);
+#endif
+
+
+  while (VariableDelay != 0)
+  {
+    VariableDelay--;
+  }
+  return;
+}
+void DelayUPG2(uint32_t retraso)
+{
+  volatile int VariableDelay;
+  // if (VarDelay<retraso)
+  VariableDelay = retraso * 50;
+
+  while (VariableDelay != 0)
+  {
+    VariableDelay--;
+  }
+  return;
+}
+
+HAL_StatusTypeDef FLASH_WaitForLastOperationUPG(uint32_t Timeout, uint32_t HIWDG)
+{
+  uint32_t error;
+  /* Wait for the FLASH operation to complete by polling on BUSY flag to be reset.
+     Even if the FLASH operation fails, the BUSY flag will be reset and an error
+     flag will be set */
+  uint32_t timeout;
+  uint32_t x;
+
+  timeout = Timeout;
+  /* Wait if any operation is ongoing */
+#if defined(FLASH_DBANK_SUPPORT)
+  error = (FLASH_SR_BSY1 | FLASH_SR_BSY2);
+#else
+  error = FLASH_SR_BSY1;
+#endif /* FLASH_DBANK_SUPPORT */
+
+  x = 0;
+  while ((FLASH->SR & error) != 0x00U)
+  {
+    DelayUPG(20, HIWDG);
+    x++;
+    if (x >= timeout)
+    {
+      return HAL_TIMEOUT;
+    }
+  }
+
+  /* check flash errors */
+  error = (FLASH->SR & FLASH_SR_ERRORS);
+
+  /* Clear SR register */
+  FLASH->SR = FLASH_SR_CLEAR;
+
+  if (0)
+  // if (error != 0x00U)
+  {
+    /*Save the error code*/
+    // pFlash.ErrorCode = error;
+    return HAL_ERROR;
+  }
+
+  /* Wait for control register to be written */
+  timeout = Timeout;
+
+  x = 0;
+
+  while ((FLASH->SR & FLASH_SR_CFGBSY) != 0x00U)
+  {
+    DelayUPG(20, HIWDG);
+    x++;
+    if (x >= timeout)
+    {
+      return HAL_TIMEOUT;
+    }
+  }
+
+  return HAL_OK;
+}
+void FLASH_PageEraseUPG(uint32_t Banks, uint32_t Page)
+{
+  uint32_t tmp;
+
+  /* Check the parameters */
+  assert_param(IS_FLASH_BANK(Banks));
+  assert_param(IS_FLASH_PAGE(Page));
+
+  /* Get configuration register, then clear page number */
+  tmp = (FLASH->CR & ~FLASH_CR_PNB);
+
+#if defined(FLASH_DBANK_SUPPORT)
+  /* Check if page has to be erased in bank 1 or 2 */
+  if (Banks != FLASH_BANK_1)
+  {
+    tmp |= FLASH_CR_BKER;
+  }
+  else
+  {
+    tmp &= ~FLASH_CR_BKER;
+  }
+#endif /* FLASH_DBANK_SUPPORT */
+
+  /* Set page number, Page Erase bit & Start bit */
+  FLASH->CR = (tmp | (FLASH_CR_STRT | (Page << FLASH_CR_PNB_Pos) | FLASH_CR_PER));
+}
+
+HAL_StatusTypeDef HAL_FLASH_ProgramUPG(uint32_t TypeProgram, uint32_t Address, uint64_t Data, uint32_t HIWDG)
+{
+  HAL_StatusTypeDef status;
+
+  /* Check the parameters */
+  assert_param(IS_FLASH_TYPEPROGRAM(TypeProgram));
+
+  /* Process Locked */
+  //__HAL_LOCK(&pFlash);
+
+  /* Reset error code */
+  // pFlash.ErrorCode = HAL_FLASH_ERROR_NONE;
+
+  /* Wait for last operation to be completed */
+  status = FLASH_WaitForLastOperationUPG(FLASH_TIMEOUT_VALUE, HIWDG);
+
+  if (status == HAL_OK)
+  {
+    /* Check the parameters */
+    assert_param(IS_FLASH_PROGRAM_ADDRESS(Address));
+
+    /* Program double-uint16_t (64-bit) at a specified address */
+    FLASH_Program_DOUBLEWORDUPG(Address, Data);
+
+    /* Wait for last operation to be completed */
+    status = FLASH_WaitForLastOperationUPG(FLASH_TIMEOUT_VALUE, HIWDG);
+
+    /* If the program operation is completed, disable the PG or FSTPG Bit */
+    CLEAR_BIT(FLASH->CR, TypeProgram);
+  }
+
+  /* Process Unlocked */
+  //__HAL_UNLOCK(&pFlash);
+
+  /* return status */
+  return status;
+}
+
+void FLASH_Program_DOUBLEWORDUPG(uint32_t Address, uint64_t Data)
+{
+  /* Set PG bit */
+  SET_BIT(FLASH->CR, FLASH_CR_PG);
+
+  /* Program first uint16_t */
+  *(uint32_t *)Address = (uint32_t)Data;
+
+  /* Barrier to ensure programming is performed in 2 steps, in right order
+    (independently of compiler optimization behavior) */
+  __ISB();
+
+  /* Program second uint16_t */
+  *(uint32_t *)(Address + 4U) = (uint32_t)(Data >> 32U);
+}
+
+HAL_StatusTypeDef HAL_FLASH_UnlockUPG(void)
+{
+  HAL_StatusTypeDef status = HAL_OK;
+
+  if (READ_BIT(FLASH->CR, FLASH_CR_LOCK) != 0x00U)
+  {
+    /* Authorize the FLASH Registers access */
+    WRITE_REG(FLASH->KEYR, FLASH_KEY1);
+    WRITE_REG(FLASH->KEYR, FLASH_KEY2);
+
+    /* verify Flash is unlock */
+    if (READ_BIT(FLASH->CR, FLASH_CR_LOCK) != 0x00U)
+    {
+      status = HAL_ERROR;
+    }
+  }
+
+  return status;
+}
+
+void FLASH_MassEraseUPG(uint32_t Banks)
+{
+  /* Check the parameters */
+  assert_param(IS_FLASH_BANK(Banks));
+
+  /* Set the Mass Erase Bit and start bit */
+  FLASH->CR |= (FLASH_CR_STRT | Banks);
+}
+
+int BorrarDe0000a1E000(uint32_t HIWDG) //  Para borrar el bootloader antiguo
+{
+
+  // static FLASH_EraseInitTypeDef EraseInitStruct;
+  FLASH_EraseInitTypeDef EraseInitStruct;
+  uint32_t PAGEError;
+  int sofar = 0;
+  __HAL_RCC_TIM14_IS_CLK_DISABLED();
+  /* Unlock the Flash to enable the flash control register access *************/
+  HAL_FLASH_UnlockUPG();
+  DelayUPG(20, HIWDG);
+  /* Erase the user Flash area*/
+
+  uint32_t StartPage = 0;
+  uint32_t EndPageAdress = 0x0801E000;
+  uint32_t EndPage = 0x3c;
+
+  /* Fill EraseInit structure*/
+  EraseInitStruct.TypeErase = FLASH_TYPEERASE_PAGES;
+  EraseInitStruct.Page = StartPage;
+  // EraseInitStruct.NbPages     = ((EndPage - StartPage)/FLASH_PAGE_SIZE) +1;
+  EraseInitStruct.NbPages = 60;
+
+  if (HAL_FLASHEx_EraseUPG(&EraseInitStruct, &PAGEError, HIWDG) != HAL_OK)
+  {
+    /*Error occurred while page erase.*/
+    return 1;
+  }
+
+  return 0;
+}
+
+HAL_StatusTypeDef HAL_IWDG_RefreshUPG(uint32_t HIWDG)
+{
+  IWDG_HandleTypeDef *hiwdg;
+  hiwdg = HIWDG;
+
+/* Reload IWDG counter with value defined in the reload register */
+#ifndef EN_DEBUG
+  __HAL_IWDG_RELOAD_COUNTER(hiwdg);
+#endif
+  /* Return function status */
+  return HAL_OK;
+}
+
+HAL_StatusTypeDef HAL_UART_TransmitUPG(uint32_t HUART, uint8_t *pData, uint16_t Size, uint32_t Timeout)
+{
+  uint8_t *pdata8bits;
+  uint16_t *pdata16bits;
+  uint32_t tickstart;
+  UART_HandleTypeDef *huart;
+  huart = HUART;
+
+  /* Check that a Tx process is not already ongoing */
+  if (huart->gState == HAL_UART_STATE_READY)
+  {
+    if ((pData == NULL) || (Size == 0U))
+    {
+      return HAL_ERROR;
+    }
+
+    /* In case of 9bits/No Parity transfer, pData buffer provided as input parameter
+       should be aligned on a u16 frontier, as data to be filled into TDR will be
+       handled through a u16 cast. */
+    if ((huart->Init.WordLength == UART_WORDLENGTH_9B) && (huart->Init.Parity == UART_PARITY_NONE))
+    {
+      if ((((uint32_t)pData) & 1U) != 0U)
+      {
+        return HAL_ERROR;
+      }
+    }
+
+    __HAL_LOCK(huart);
+
+    huart->ErrorCode = HAL_UART_ERROR_NONE;
+    huart->gState = HAL_UART_STATE_BUSY_TX;
+
+    /* Init tickstart for timeout management */
+    tickstart = HAL_GetTickUPG();
+
+    huart->TxXferSize = Size;
+    huart->TxXferCount = Size;
+
+    /* In case of 9bits/No Parity transfer, pData needs to be handled as a uint16_t pointer */
+    if ((huart->Init.WordLength == UART_WORDLENGTH_9B) && (huart->Init.Parity == UART_PARITY_NONE))
+    {
+      pdata8bits = NULL;
+      pdata16bits = (uint16_t *)pData;
+    }
+    else
+    {
+      pdata8bits = pData;
+      pdata16bits = NULL;
+    }
+
+    __HAL_UNLOCK(huart);
+
+    while (huart->TxXferCount > 0U)
+    {
+      if (UART_WaitOnFlagUntilTimeoutUPG(huart, UART_FLAG_TXE, RESET, tickstart, Timeout) != HAL_OK)
+      {
+        return HAL_TIMEOUT;
+      }
+      if (pdata8bits == NULL)
+      {
+        huart->Instance->TDR = (uint16_t)(*pdata16bits & 0x01FFU);
+        pdata16bits++;
+      }
+      else
+      {
+        huart->Instance->TDR = (uint8_t)(*pdata8bits & 0xFFU);
+        pdata8bits++;
+      }
+      huart->TxXferCount--;
+    }
+
+    if (UART_WaitOnFlagUntilTimeoutUPG(huart, UART_FLAG_TC, RESET, tickstart, Timeout) != HAL_OK)
+    {
+      return HAL_TIMEOUT;
+    }
+
+    /* At end of Tx process, restore huart->gState to Ready */
+    huart->gState = HAL_UART_STATE_READY;
+
+    return HAL_OK;
+  }
+  else
+  {
+    return HAL_BUSY;
+  }
+}
+
+HAL_StatusTypeDef UART_WaitOnFlagUntilTimeoutUPG(uint32_t HUART, uint32_t Flag, FlagStatus Status,
+                                                 uint32_t Tickstart, uint32_t Timeout)
+{
+  UART_HandleTypeDef *huart;
+  huart = HUART;
+
+  /* Wait until flag is set */
+  while ((__HAL_UART_GET_FLAG(huart, Flag) ? SET : RESET) == Status)
+  {
+    /* Check for the Timeout */
+    if (Timeout != HAL_MAX_DELAY)
+    {
+      if (((HAL_GetTickUPG() - Tickstart) > Timeout) || (Timeout == 0U))
+      {
+        /* Disable TXE, RXNE, PE and ERR (Frame error, noise error, overrun error)
+           interrupts for the interrupt process */
+        ATOMIC_CLEAR_BIT(huart->Instance->CR1, (USART_CR1_RXNEIE_RXFNEIE | USART_CR1_PEIE |
+                                                USART_CR1_TXEIE_TXFNFIE));
+        ATOMIC_CLEAR_BIT(huart->Instance->CR3, USART_CR3_EIE);
+
+        huart->gState = HAL_UART_STATE_READY;
+        huart->RxState = HAL_UART_STATE_READY;
+
+        __HAL_UNLOCK(huart);
+
+        return HAL_TIMEOUT;
+      }
+
+      if (READ_BIT(huart->Instance->CR1, USART_CR1_RE) != 0U)
+      {
+        if (__HAL_UART_GET_FLAG(huart, UART_FLAG_RTOF) == SET)
+        {
+          /* Clear Receiver Timeout flag*/
+          __HAL_UART_CLEAR_FLAG(huart, UART_CLEAR_RTOF);
+
+          /* Disable TXE, RXNE, PE and ERR (Frame error, noise error, overrun error)
+             interrupts for the interrupt process */
+          ATOMIC_CLEAR_BIT(huart->Instance->CR1, (USART_CR1_RXNEIE_RXFNEIE | USART_CR1_PEIE |
+                                                  USART_CR1_TXEIE_TXFNFIE));
+          ATOMIC_CLEAR_BIT(huart->Instance->CR3, USART_CR3_EIE);
+
+          huart->gState = HAL_UART_STATE_READY;
+          huart->RxState = HAL_UART_STATE_READY;
+          huart->ErrorCode = HAL_UART_ERROR_RTO;
+
+          /* Process Unlocked */
+          __HAL_UNLOCK(huart);
+
+          return HAL_TIMEOUT;
+        }
+      }
+    }
+  }
+  return HAL_OK;
+}
+
+//__weak uint32_t HAL_GetTickUPG(void)
+//{
+//  uwTickUPG++;
+//  DelayUPG2(50);
+//  return uwTickUPG;
+//}
+__weak uint32_t HAL_GetTickUPG(void)
+{
+  return 10000;
+}
+
+void version_cargador(char *resultado)
+{
+  strcpy(resultado, VERSION_UPGARDE);
+}
+
+void MiIntToAscii(char *aDonde, int cualNumero)
+{
+
+  char resultado[6];
+  char indiceAresultado;
+  char x, y;
+  int numero;
+
+  numero = cualNumero;
+  if (numero == 0)
+  {
+    resultado[0] = 0x30;
+    resultado[1] = 0x00;
+  }
+  else
+  {
+    indiceAresultado = 0;
+    for (x = 0; x < 5; x++)
+    {
+      if (x == 0)
+      {
+        y = Mi_aeabi_idiv(numero, 10000);
+        // y = numero / 10000 ;
+        numero = numero - (y * 10000);
+      }
+      else if (x == 1)
+      {
+        y = Mi_aeabi_idiv(numero, 1000);
+        numero = numero - (y * 1000);
+      }
+      else if (x == 2)
+      {
+        y = Mi_aeabi_idiv(numero, 100);
+        numero = numero - (y * 100);
+      }
+      else if (x == 3)
+      {
+        y = Mi_aeabi_idiv(numero, 10);
+        numero = numero - (y * 10);
+      }
+      else if (x == 4)
+      {
+        y = numero;
+      }
+      resultado[indiceAresultado] = y + 0x30;
+      if ((y != 0) || (indiceAresultado != 0))
+        indiceAresultado++;
+    }
+    resultado[indiceAresultado] = 0;
+  }
+  copiar(aDonde, resultado);
+}
+
+HAL_StatusTypeDef HAL_UART_ReceiveUPG(uint32_t HUART, uint8_t *pData, uint16_t Size, uint32_t Timeout)
+{
+  uint8_t *pdata8bits;
+  uint16_t *pdata16bits;
+  uint16_t uhMask;
+  uint32_t tickstart;
+  UART_HandleTypeDef *huart;
+  huart = HUART;
+
+  /* Check that a Rx process is not already ongoing */
+  // if (huart->RxState == HAL_UART_STATE_READY)
+  //{
+  if ((pData == NULL) || (Size == 0U))
+  {
+    return HAL_ERROR;
+  }
+
+  /* In case of 9bits/No Parity transfer, pData buffer provided as input parameter
+     should be aligned on a u16 frontier, as data to be received from RDR will be
+     handled through a u16 cast. */
+  if ((huart->Init.WordLength == UART_WORDLENGTH_9B) && (huart->Init.Parity == UART_PARITY_NONE))
+  {
+    if ((((uint32_t)pData) & 1U) != 0U)
+    {
+      return HAL_ERROR;
+    }
+  }
+
+  __HAL_LOCK(huart);
+
+  huart->ErrorCode = HAL_UART_ERROR_NONE;
+  huart->RxState = HAL_UART_STATE_BUSY_RX;
+  huart->ReceptionType = HAL_UART_RECEPTION_STANDARD;
+
+  /* Init tickstart for timeout management */
+  tickstart = HAL_GetTickUPG();
+  // tickstart =	uwTickUPG;
+
+  huart->RxXferSize = Size;
+  huart->RxXferCount = Size;
+
+  /* Computation of UART mask to apply to RDR register */
+  UART_MASK_COMPUTATION(huart);
+  uhMask = huart->Mask;
+
+  /* In case of 9bits/No Parity transfer, pRxData needs to be handled as a uint16_t pointer */
+  if ((huart->Init.WordLength == UART_WORDLENGTH_9B) && (huart->Init.Parity == UART_PARITY_NONE))
+  {
+    pdata8bits = NULL;
+    pdata16bits = (uint16_t *)pData;
+  }
+  else
+  {
+    pdata8bits = pData;
+    pdata16bits = NULL;
+  }
+
+  __HAL_UNLOCK(huart);
+
+  /* as long as data have to be received */
+  while (huart->RxXferCount > 0U)
+  {
+    if (UART_WaitOnFlagUntilTimeoutUPG(huart, UART_FLAG_RXNE, RESET, tickstart, Timeout) != HAL_OK)
+    {
+      return HAL_TIMEOUT;
+    }
+    if (pdata8bits == NULL)
+    {
+      *pdata16bits = (uint16_t)(huart->Instance->RDR & uhMask);
+      pdata16bits++;
+    }
+    else
+    {
+      *pdata8bits = (uint8_t)(huart->Instance->RDR & (uint8_t)uhMask);
+      pdata8bits++;
+    }
+    huart->RxXferCount--;
+  }
+
+  /* At end of Rx process, restore huart->RxState to Ready */
+  huart->RxState = HAL_UART_STATE_READY;
+
+  return HAL_OK;
+  //}
+  // else
+  //{
+  //  return HAL_BUSY;
+  //}
+}
+
+signed int Mi_aeabi_idiv(signed int num, signed int den)
+{
+  signed int minus = 0;
+  signed int v;
+
+  if (num < 0)
+  {
+    num = -num;
+    minus = 1;
+  }
+  if (den < 0)
+  {
+    den = -den;
+    minus ^= 1;
+  }
+
+  v = Mi_udivmodsi4(num, den, 0);
+  if (minus)
+    v = -v;
+
+  return v;
+}
+
+uint32_t Mi_udivmodsi4(uint32_t num, uint32_t den, int modwanted)
+{
+  uint32_t bit = 1;
+  uint32_t res = 0;
+
+  while (den < num && bit && !(den & (1L << 31)))
+  {
+    den <<= 1;
+    bit <<= 1;
+  }
+  while (bit)
+  {
+    if (num >= den)
+    {
+      num -= den;
+      res |= bit;
+    }
+    bit >>= 1;
+    den >>= 1;
+  }
+  if (modwanted)
+    return num;
+  return res;
+}
+
+void HAL_GPIO_TogglePinUPG(GPIO_TypeDef *GPIOx, uint16_t GPIO_Pin)
+{
+  uint32_t odr;
+
+  /* Check the parameters */
+  assert_param(IS_GPIO_PIN(GPIO_Pin));
+
+  /* get current Output Data Register value */
+  odr = GPIOx->ODR;
+
+  /* Set selected pins that were at low level, and reset ones that were high */
+  GPIOx->BSRR = ((odr & GPIO_Pin) << GPIO_NUMBER) | (~odr & GPIO_Pin);
+}
+
+void HAL_GPIO_WritePinUPG(GPIO_TypeDef *GPIOx, uint16_t GPIO_Pin, GPIO_PinState PinState)
+{
+  /* Check the parameters */
+  assert_param(IS_GPIO_PIN(GPIO_Pin));
+  assert_param(IS_GPIO_PIN_ACTION(PinState));
+
+  if (PinState != GPIO_PIN_RESET)
+  {
+    GPIOx->BSRR = (uint32_t)GPIO_Pin;
+  }
+  else
+  {
+    GPIOx->BRR = (uint32_t)GPIO_Pin;
+  }
+}
+
+
+
+

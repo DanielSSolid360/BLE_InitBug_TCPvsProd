@@ -1,0 +1,660 @@
+#include <string.h>
+#include <stdio.h>
+#include "main.h"
+#include "variables.h"
+#include "tipos.h"
+#include "configura.h"
+#include "varios.h"
+
+void Procesa_consola(void)
+{
+	uint16_t b;
+	char x,i;
+	// char str[64];
+
+	perroMain=0;
+	if (comando_consola)
+		{
+		strcpy((void *)buffer_in, (void *)buffer_in_RS232_TEMP);
+		Indice_A_buffer_RS232_TEMP = 0;
+		b = strlen((void *)buffer_in);
+		b = RX_App(b, 0);
+		PRINTF((void *)buffer_out);
+		comando_consola = NO;
+		}
+	if (comando_BLE)
+		{
+		strcpy((void *)buffer_in, (void *)buffer_RX_desde_BLE);
+		memset ((void *)buffer_RX_desde_BLE,0,255);
+		b = strlen((void *)buffer_in);
+		b = RX_App(b, 0);
+		PRINTF((void *)buffer_out);
+		WR_en_BLE((void *)buffer_out,b);
+		comando_BLE = NO;
+		}
+	if (comando_TCP)
+		{
+		strcpy((void *)buffer_in, (void *)buffer_RX_desde_TCP);
+		b = strlen((void *)buffer_in);
+		b = RX_App(b, 0);
+		PRINTF((void *)buffer_out);
+		WR_en_TCP((void *)buffer_out,b);
+		comando_TCP = NO;
+		}
+
+	if (comando_TCP_ETH)
+		{
+		strcpy((void *)buffer_in, (void *)buffer_RX_desde_TCP);
+		b = strlen((void *)buffer_in);
+		b = RX_App(b, 0);
+		PRINTF((void *)buffer_out);
+		WR_en_TCP((void *)buffer_out,b);
+		comando_TCP_ETH = NO;
+		}
+
+	if (comando_MQTT)
+		{
+		strcpy((void *)buffer_in, (void *)buffer_RX_desde_MQTT);
+		b = strlen((void *)buffer_in);
+		i=0;
+		for (x=0;x<b;x++)
+			{
+			if ((buffer_in[x]!=0xd)&&(buffer_in[x]!=0xa)&&(buffer_in[x]!='.'))
+				{
+				copiaUltimoCmd[i]=buffer_in[x];
+				i++;
+				copiaUltimoCmd[i]=0;
+				}
+			}
+		b = RX_App(b, 0);
+		PRINTF((void *)buffer_out);
+		HAL_Delay(500);
+		b = strlen((void *)buffer_out);
+		WR_en_MQTT((void *)buffer_out,b,SI);
+		comando_MQTT = NO;
+		}
+
+
+}
+void Copia_SSDI(void)
+{
+	char x;
+	
+	for (x=0;x<0x40;x++)
+		{
+		ssid[x]=EspejoFlash[x+0x10];
+		if ((ssid[x]==0)||(ssid[x]==0xff)) break;
+		}
+
+}	
+void Copia_PASSWORD(void)
+{
+	char x;
+	
+	for (x=0;x<0x40;x++)
+		{
+		password[x]=EspejoFlash[x+0x50];
+		if ((password[x]==0)||(password[x]==0xff)) break;
+		}
+
+}	
+
+void Test_cambio_estado(void)
+{
+	char a,b;
+	
+	a=HAL_GPIO_ReadPin(GPIOB,PULSADOR_Pin);
+	if ((estadoPULSADOR!=a)&&(tiempoPulsador>5))
+		{
+			estadoPULSADOR=a;
+			if (a==0) 
+				{
+				strcpy((void *)buffer_out, "PULSADOR.- pulsado\r\n");
+				pulsadorActivado=SI;
+				}
+			else 
+				{
+				strcpy((void *)buffer_out, "PULSADOR.- NO pulsado\r\n");
+				pulsadorActivado=NO;
+				}
+			PRINTF(buffer_out);
+			b = strlen((void *)buffer_out);
+			WR_en_MQTT((void *)buffer_out,b,NO);
+			if (BLE0==SI)
+				{ 
+				enviar_por_conexion_BLE='0';
+				WR_en_BLE((void *)buffer_out,b);
+				}
+			if (BLE1==SI)
+				{ 
+				enviar_por_conexion_BLE='1';
+				WR_en_BLE((void *)buffer_out,b);
+				}
+		tiempoPulsador=0;
+		}
+	else if (estadoPULSADOR==a)tiempoPulsador=0;
+	
+	a=HAL_GPIO_ReadPin(GPIOB,CT1_Pin);
+	if ((estadoCT1!=a)&&(tiempoCT1>5))
+		{
+			estadoCT1=a;
+			if (a==0) strcpy((void *)buffer_out, "CT1.- cerrado\r\n");
+			else strcpy((void *)buffer_out, "CT1.- abierto\r\n");
+			PRINTF(buffer_out);
+			b = strlen((void *)buffer_out);
+			WR_en_MQTT((void *)buffer_out,b,NO);
+
+			if (BLE0==SI)
+				{ 
+				enviar_por_conexion_BLE='0';
+				WR_en_BLE((void *)buffer_out,b);
+				}
+			if (BLE1==SI)
+				{ 
+				enviar_por_conexion_BLE='1';
+				WR_en_BLE((void *)buffer_out,b);
+				}
+		tiempoCT1=0;
+		}
+	else if (estadoCT1==a) tiempoCT1=0;
+	
+	a=HAL_GPIO_ReadPin(GPIOB,CT2_Pin);
+	if ((estadoCT2!=a)&&(tiempoCT2>5))
+		{
+			estadoCT2=a;
+			if (a==0) strcpy((void *)buffer_out, "CT2.- cerrado\r\n");
+			else strcpy((void *)buffer_out, "CT2.- abierto\r\n");
+			PRINTF(buffer_out);
+			b = strlen((void *)buffer_out);
+			WR_en_MQTT((void *)buffer_out,b,NO);
+
+			if (BLE0==SI)
+				{ 
+				enviar_por_conexion_BLE='0';
+				WR_en_BLE((void *)buffer_out,b);
+				}
+			if (BLE1==SI)
+				{ 
+				enviar_por_conexion_BLE='1';
+				WR_en_BLE((void *)buffer_out,b);
+				}
+		tiempoCT2=0;
+		}
+	else if (estadoCT2==a) tiempoCT2=0;
+
+	a=HAL_GPIO_ReadPin(GPIOA,CT3_Pin);
+	if ((estadoCT3!=a)&&(tiempoCT3>5))
+		{
+			estadoCT3=a;
+			if (a==0) strcpy((void *)buffer_out, "CT3.- cerrado\r\n");
+			else strcpy((void *)buffer_out, "CT3.- abierto\r\n");
+			PRINTF(buffer_out);
+			b = strlen((void *)buffer_out);
+			WR_en_MQTT((void *)buffer_out,b,NO);
+
+			if (BLE0==SI)
+				{ 
+				enviar_por_conexion_BLE='0';
+				WR_en_BLE((void *)buffer_out,b);
+				}
+			if (BLE1==SI)
+				{ 
+				enviar_por_conexion_BLE='1';
+				WR_en_BLE((void *)buffer_out,b);
+				}
+		tiempoCT3=0;
+		}
+	else if (estadoCT3==a) tiempoCT3=0;
+
+	a=HAL_GPIO_ReadPin(GPIOB,CT4_Pin);
+	if ((estadoCT4!=a)&&(tiempoCT4>5))
+		{
+			estadoCT4=a;
+			if (a==0) strcpy((void *)buffer_out, "CT4.- cerrado\r\n");
+			else strcpy((void *)buffer_out, "CT4.- abierto\r\n");
+			PRINTF(buffer_out);
+			b = strlen((void *)buffer_out);
+			WR_en_MQTT((void *)buffer_out,b,NO);
+
+			if (BLE0==SI)
+				{ 
+				enviar_por_conexion_BLE='0';
+				WR_en_BLE((void *)buffer_out,b);
+				}
+			if (BLE1==SI)
+				{ 
+				enviar_por_conexion_BLE='1';
+				WR_en_BLE((void *)buffer_out,b);
+				}
+		tiempoCT4=0;
+		}
+	else if (estadoCT4==a) tiempoCT4=0;
+
+	a=HAL_GPIO_ReadPin(GPIOA,CT5_Pin);
+	if ((estadoCT5!=a)&&(tiempoCT5>5))
+		{
+			estadoCT5=a;
+			if (a==0) strcpy((void *)buffer_out, "CT5.- cerrado\r\n");
+			else strcpy((void *)buffer_out, "CT5.- abierto\r\n");
+			PRINTF(buffer_out);
+			b = strlen((void *)buffer_out);
+			WR_en_MQTT((void *)buffer_out,b,NO);
+
+			if (BLE0==SI)
+				{ 
+				enviar_por_conexion_BLE='0';
+				WR_en_BLE((void *)buffer_out,b);
+				}
+			if (BLE1==SI)
+				{ 
+				enviar_por_conexion_BLE='1';
+				WR_en_BLE((void *)buffer_out,b);
+				}
+		tiempoCT5=0;
+		}
+	else if (estadoCT5==a) tiempoCT5=0;
+
+	a=HAL_GPIO_ReadPin(GPIOA,CT6_Pin);
+	if ((estadoCT6!=a)&&(tiempoCT6>5))
+		{
+			estadoCT6=a;
+			if (a==0) strcpy((void *)buffer_out, "CT6.- cerrado\r\n");
+			else strcpy((void *)buffer_out, "CT6.- abierto\r\n");
+			PRINTF(buffer_out);
+			b = strlen((void *)buffer_out);
+			WR_en_MQTT((void *)buffer_out,b,NO);
+
+			if (BLE0==SI)
+				{ 
+				enviar_por_conexion_BLE='0';
+				WR_en_BLE((void *)buffer_out,b);
+				}
+			if (BLE1==SI)
+				{ 
+				enviar_por_conexion_BLE='1';
+				WR_en_BLE((void *)buffer_out,b);
+				}
+		tiempoCT6=0;
+		}
+	else if (estadoCT6==a) tiempoCT6=0;
+
+	a=HAL_GPIO_ReadPin(GPIOA,CT7_Pin);
+	if ((estadoCT7!=a)&&(tiempoCT7>5))
+		{
+			estadoCT7=a;
+			if (a==0) strcpy((void *)buffer_out, "CT7.- cerrado\r\n");
+			else strcpy((void *)buffer_out, "CT7.- abierto\r\n");
+			PRINTF(buffer_out);
+			b = strlen((void *)buffer_out);
+			WR_en_MQTT((void *)buffer_out,b,NO);
+
+			if (BLE0==SI)
+				{ 
+				enviar_por_conexion_BLE='0';
+				WR_en_BLE((void *)buffer_out,b);
+				}
+			if (BLE1==SI)
+				{ 
+				enviar_por_conexion_BLE='1';
+				WR_en_BLE((void *)buffer_out,b);
+				}
+		tiempoCT7=0;
+		}
+	else if (estadoCT7==a) tiempoCT7=0;
+	
+	a=HAL_GPIO_ReadPin(GPIOC,CT8_Pin);
+	if ((estadoCT8!=a)&&(tiempoCT8>5))
+		{
+			estadoCT8=a;
+			if (a==0) strcpy((void *)buffer_out, "CT8.- cerrado\r\n");
+			else strcpy((void *)buffer_out, "CT8.- abierto\r\n");
+			PRINTF(buffer_out);
+			b = strlen((void *)buffer_out);
+			WR_en_MQTT((void *)buffer_out,b,NO);
+
+			if (BLE0==SI)
+				{ 
+				enviar_por_conexion_BLE='0';
+				WR_en_BLE((void *)buffer_out,b);
+				}
+			if (BLE1==SI)
+				{ 
+				enviar_por_conexion_BLE='1';
+				WR_en_BLE((void *)buffer_out,b);
+				}
+		tiempoCT8=0;
+		}
+	else if (estadoCT8==a) tiempoCT8=0;
+
+	a=HAL_GPIO_ReadPin(GPIOB,CT9_Pin);
+	if ((estadoCT9!=a)&&(tiempoCT9>5))
+		{
+			estadoCT9=a;
+			if (a==0) strcpy((void *)buffer_out, "CT9.- cerrado\r\n");
+			else strcpy((void *)buffer_out, "CT9.- abierto\r\n");
+			PRINTF(buffer_out);
+			b = strlen((void *)buffer_out);
+			WR_en_MQTT((void *)buffer_out,b,NO);
+
+			if (BLE0==SI)
+				{ 
+				enviar_por_conexion_BLE='0';
+				WR_en_BLE((void *)buffer_out,b);
+				}
+			if (BLE1==SI)
+				{ 
+				enviar_por_conexion_BLE='1';
+				WR_en_BLE((void *)buffer_out,b);
+				}
+		tiempoCT9=0;
+		}
+	else if (estadoCT9==a) tiempoCT9=0;
+
+	a=HAL_GPIO_ReadPin(GPIOD,CT10_Pin);
+	if ((estadoCT10!=a)&&(tiempoCT10>5))
+		{
+			estadoCT10=a;
+			if (a==0) strcpy((void *)buffer_out, "CT10.- cerrado\r\n");
+			else strcpy((void *)buffer_out, "CT10.- abierto\r\n");
+			PRINTF(buffer_out);
+			b = strlen((void *)buffer_out);
+			WR_en_MQTT((void *)buffer_out,b,NO);
+
+			if (BLE0==SI)
+				{ 
+				enviar_por_conexion_BLE='0';
+				WR_en_BLE((void *)buffer_out,b);
+				}
+			if (BLE1==SI)
+				{ 
+				enviar_por_conexion_BLE='1';
+				WR_en_BLE((void *)buffer_out,b);
+				}
+		tiempoCT10=0;
+		}
+	else if (estadoCT10==a) tiempoCT10=0;
+
+	a=HAL_GPIO_ReadPin(GPIOD,NC_Pin);
+	if ((estadoTAMPER!=a)&&(tiempoTAMPER>5))
+		{
+			estadoTAMPER=a;
+			if (a==0) strcpy((void *)buffer_out, "TAMPER.- abierto\r\n");
+			else strcpy((void *)buffer_out, "TAMPER.- cerrado\r\n");
+			PRINTF(buffer_out);
+			b = strlen((void *)buffer_out);
+			WR_en_MQTT((void *)buffer_out,b,NO);
+
+			if (BLE0==SI)
+				{ 
+				enviar_por_conexion_BLE='0';
+				WR_en_BLE((void *)buffer_out,b);
+				}
+			if (BLE1==SI)
+				{ 
+				enviar_por_conexion_BLE='1';
+				WR_en_BLE((void *)buffer_out,b);
+				}
+		tiempoTAMPER=0;
+		}
+	else if (estadoTAMPER==a) tiempoTAMPER=0;
+
+
+}
+
+
+
+void Reenvia_TCP_por_BLE(void)
+{
+	if ((envia_por_BLE==SI)&&(BLE_desconectado==NO))
+		{
+		envia_por_BLE=NO;
+		enviar_por_conexion_BLE='0';
+		WR_en_BLE((void *)buffer_copia_TCP_en_BLE,strlen (buffer_copia_TCP_en_BLE));
+		}
+}
+void Pinta_nuevos_eventos_BLE(void)
+{
+	if (eventos_BLE_nuevo==SI)
+		{
+		PRINTF(buffer_eventos_BLE);
+		eventos_BLE_nuevo=NO;
+		}
+}
+void PRINTF(char *imprimeEsto)
+{
+	HAL_UART_Transmit(&huart2, (void *)imprimeEsto, strlen(imprimeEsto), 20);
+}
+void Escribe_en_flash	(char *que_grabo,unsigned short offset,unsigned short cuantos)
+{
+	char *paux;
+	unsigned short x;
+	uint32_t StartPageAddress;
+	char buffer[0X200] __attribute__((aligned (16)));;
+	__IO uint8_t data = 0;
+	
+	
+	// Salva el valor del IDF de pruebas y MandoAsignado
+	StartPageAddress=0x0801F800;
+	for (x=0;x<0x200;x++)
+		{
+		buffer[x]=*(__IO uint8_t *)StartPageAddress;
+		StartPageAddress++;
+		}
+
+	paux=que_grabo;
+	for (x=0;x<cuantos;x++)
+		{
+		buffer[x+offset]=*paux;
+		paux++;
+		}				
+  	
+  	//hiwdg.Init.Prescaler = IWDG_PRESCALER_16;
+	//hiwdg.Init.Reload = 3999;
+  	//HAL_IWDG_Init(&hiwdg);
+
+	prg_flash (0x0801F800,0x100,(uint32_t *) buffer);
+	// lo escribe en flash
+
+  	//hiwdg.Init.Prescaler = IWDG_PRESCALER_8;
+	//hiwdg.Init.Reload = 79;
+  	//HAL_IWDG_Init(&hiwdg);
+
+}
+
+void Lee_en_flash	(char *que_dejo,unsigned short offset,unsigned short cuantos)
+{
+	char *paux;
+	unsigned short x;
+	uint32_t StartPageAddress;
+	__IO uint8_t data = 0;
+	
+	
+	// Salva el valor del IDF de pruebas y MandoAsignado
+	StartPageAddress=0x0801F800+offset;
+	for (x=0;x<cuantos;x++)
+		{
+		que_dejo[x]=*(__IO uint8_t *)StartPageAddress;
+		StartPageAddress++;
+		}
+}
+
+////////////////////////////////////////////////////////////////////////////////////
+// 
+//
+//   Permite hacer Delay equivalente a multiplicar el UINT de entrada  por 10uSeg 
+//
+//
+//	ENTRADA.- (UINT) Cantidad de 10uSeg que durara la pausa
+//	DEVUELVE.- NADA
+//
+//
+///////////////////////////////////////////////////////////////////////////////////
+
+void Delay(unsigned int retraso)
+{
+	volatile int VariableDelay;
+	//if (VarDelay<retraso)
+	VariableDelay=retraso*500;
+		
+	while (VariableDelay!=0) 
+		{
+		VariableDelay--;
+		}
+	return; 
+}
+
+void LeeIDF(unsigned char *aqui,unsigned char * DireccionMemoria,char cuantos)
+{
+	unsigned char i;
+
+	// Lee 
+	
+	for (i=0;i<cuantos;i++)	
+		{
+		*aqui=*DireccionMemoria;
+		aqui++;
+		DireccionMemoria++;
+		}
+}
+unsigned short crc16(unsigned char * data_p, unsigned short length, unsigned short cr_inico)
+
+{
+    unsigned char x;
+    unsigned short crc;
+ 
+    crc = cr_inico;
+ 
+    while (length--){
+        x = crc >> 8 ^ *data_p++;
+        x ^= x>>4;
+        crc = (crc << 8) ^ ((unsigned short)(x << 12)) ^ ((unsigned short)(x <<5)) ^ ((unsigned short)x);
+    }
+    return crc;
+}
+
+void ActualizaHora(void)
+{
+	char straux[128];
+	
+	if (((ETH_conectado)||(WIFI_conectado))&&(pendienteSMTP))
+		{
+		strcpy((void *)straux, "AT+CIPSNTPCFG=1,100,\"0.pool.ntp.org\",\"time.google.com\"\r\n");
+		Send_RS232_ESP_ACK(500,(void *)straux);
+		if (Recibido_OK_ESP) 
+			{
+			pendienteSMTP=NO;
+			tiempoEsperaRespuestaLargo = 10;
+			while ((horaActualizada == NO) && (tiempoEsperaRespuestaLargo)) {}
+			if (horaActualizada == SI)
+				{
+				strcpy((void *)straux, "AT+CIPSNTPTIME?\r\n");
+				Send_RS232_ESP_ACK(500,(void *)straux);
+				}
+			}
+		strcpy((void *)straux, "AT+CIPSNTPINTV=3600\r\n");
+		Send_RS232_ESP_ACK(500,(void *)straux);
+		}
+}
+
+ uint32_t y, m, d, hh, mm, ss;		// We use 32 bits for all variables for easier calculations later.
+
+void Captura_fecha (char *deAqui)
+{
+	
+	// Name of Day (not used)
+	char* tok = strtok(buffer_RX_MODEM + strlen("+CIPSNTPTIME:"), " ");
+	
+	// Month
+	tok = strtok(NULL, " ");
+	switch( *tok )
+	{
+	 case 'J':		// Jan, Jun, Jul
+	if( *(tok+1) == 'a' )		// Jan
+	{
+		mes = 1;
+	}
+	else if( *(tok+2) == 'n' )	// Jun
+	{
+		mes = 6;
+	}
+	else				// Jul
+	{
+		mes = 7;
+	}
+	break;
+	 case 'F':		// Feb
+		mes = 2;
+	break;
+	 case 'M':		// Mar, May
+	if( *(tok+2) == 'y' )	// May
+		{
+		mes = 5;
+		}
+	else			// Mar
+		{
+		mes = 3;	
+		}
+	break;
+	 case 'A':		// Apr
+	if( *(tok+1) == 'g' )	// Ago, Apr
+		{
+		mes = 8;
+		}
+	else			// Mar
+		{
+		mes = 4;	
+		}	
+	break;
+	 case 'S':		// Sep
+		mes = 9;
+	break;
+	 case 'O':		// Oct
+		mes = 10;
+	break;
+	 case 'N':	  	// Nov
+		mes = 11;
+	break;
+	 case 'D':		// Dec
+		mes = 12;
+	break;
+	 default:		// Error
+	mes = 0;
+	break;
+	}
+
+	// Day
+	tok = strtok(NULL, " ");
+	dia = strtoul(tok, NULL, 10);
+	
+	// Time
+	tok = strtok(NULL, " ");
+	hora = 10 * (*(tok+0) - '0') + (*(tok+1) - '0');
+	minuto = 10 * (*(tok+3) - '0') + (*(tok+4) - '0');
+	segundo = 10 * (*(tok+6) - '0') + (*(tok+7) - '0');
+	
+	// Year
+	tok = strtok(NULL, " ");
+	//yOff = strtoul(tok, NULL, 10) - 2000;
+	year   = strtoul(tok, NULL, 10);
+         
+}        
+
+void Actualizacion_Programada(void)
+{       
+	if (((hora==HORA_UPGRADE)&&(minuto==MINUTO_UPGRADE))||(pulsadorActivado)||(actualizacionPendiente))
+		{        
+		ORDEN(".DESCARGA\r\n");
+		if (descargaOK==SI) ORDEN(".UPGRADE\r\n");
+		}
+
+}         
+         
+         
+         
+         
+         
+         
+         
+         
+         
+         

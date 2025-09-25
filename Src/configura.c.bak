@@ -1,0 +1,818 @@
+#include <stdio.h>
+#include <string.h>
+#include <ctype.h>
+#include <string.h>
+#include "variables.h"
+#include "esp32.h"
+#include "tipos.h"
+#include "configura.h"
+
+void ORDEN(char *orden)
+{
+	strcpy((void *)buffer_in, orden);
+	RX_App(strlen((void *)buffer_in), 0);
+}
+
+/*************************************************************************
+uint16_t RX_App(uint16_t cuantos,byte desde)
+ *************************************************************************/
+
+uint16_t RX_App(uint16_t cuantos, byte desde)
+{
+
+	byte a,b,i,x;
+	byte *paux;
+
+	uint32_t origen;
+	uint32_t destino;
+	
+	uint16_t w,z;
+
+	byte entrada[256];
+	byte straux[128];
+	
+	byte param1[64];
+	byte param2[64];
+	byte param3[128];
+	byte param4[64];
+	byte param5[64];
+
+
+	param5[0] = 0;
+	param4[0] = 0;
+	param3[0] = 0;
+	param2[0] = 0;
+	param1[0] = 0;
+
+	buffer_in[cuantos] = 0xd; // Terminador contra TORPES
+	buffer_in[cuantos + 1] = 0xa;
+	buffer_in[cuantos + 2] = 0x0;
+
+	a = sscanf(buffer_in, "%s %s %s %s %s", param1, param2, param3, param4, param5);
+
+	paux = buffer_in + strlen((void *)param1);
+
+	if ((buffer_in[0] == '.') || (buffer_in[0] == '{'))
+	{
+		for (b=0;b<(strlen((void *)param1));b++) param1[b]=toupper(param1[b]);
+
+		//-------------------------------------------------------------------------------------------------------
+		// Comando .VERsion
+		//-------------------------------------------------------------------------------------------------------
+
+		if (!memcmp(param1, ".VER", 4))
+
+		{
+			Pinta_VERSION();
+		}
+
+		//-------------------------------------------------------------------------------------------------------
+		// Comando .ALTa
+		//-------------------------------------------------------------------------------------------------------
+
+		else if (!memcmp(param1, ".ALT", 4))
+
+		{
+			if (EspejoFlash[0])		//== 0-> ya dado de Alta, !=0 -> no se ha dado de alta 
+			{				
+				EspejoFlash[0]=0;
+				sprintf((void *)buffer_out, "^ALTA OK\r\n");	
+				strcat((void *)buffer_out,MAC_BLE);
+				strcat((void *)buffer_out,"\r\nBLE10\r\n");
+				sprintf (param2,"%02d.%02d.%02d\r\n$", SW_VERSION, SW_REVISION, SW_COMPILATION);
+				strcat((void *)buffer_out,param2);
+				Escribe_en_flash (EspejoFlash,0,0x200);
+
+				sprintf((void *)straux, "AT+BLEADVDATAEX=\"Ares %s BLE10 A\",\"A002\",\"31323334\",1\r\n", MAC_BLE);
+				Send_RS232_ESP_ACK(500,(void *)straux);
+			}
+			else
+			{
+				strcpy((void *)buffer_out,"^ALTA KO: EL DISPOSITIVO YA ESTA DADO DE ALTA\r\n$"); 
+			}
+
+		}
+
+		//-------------------------------------------------------------------------------------------------------
+		// Comando COP
+		//-------------------------------------------------------------------------------------------------------
+
+		else if (!memcmp(param1, ".COP", 4))
+		{
+			origen=0x801e000;
+			
+			for (w=0;w<0x1000;w++)
+				{
+				buffer_aligned[w] = *(__IO uint8_t *)origen;
+				origen++;
+				}			
+	
+			if (buffer_aligned[0x181]==0x7d) 
+				{
+				PRINTF ("Fallo arreglado\r\n");
+				buffer_aligned[0x181]=0xfd;
+				}
+			prg_flash(0x801c000, 0x200, buffer_aligned);
+			strcpy((void *)buffer_out,"Copiado\r\n"); 
+			
+		}
+
+
+		//-------------------------------------------------------------------------------------------------------
+		// Comando CMP
+		//-------------------------------------------------------------------------------------------------------
+
+		else if (!memcmp(param1, ".CMP", 4))
+		{
+
+			origen=0x801e000;
+			destino=0x801c000;
+			
+			for (w=0;w<0x1000;w++)
+				{
+				x = *(__IO uint8_t *)origen;
+				i = *(__IO uint8_t *)destino;
+				if (x!=i) 
+					{
+					sprintf((void *)buffer_out,"Diferencia encontrada en %X (%X,%X)\r\n",destino,x,i);
+					PRINTF (buffer_out);
+					break;
+					}
+				origen++;
+				destino++;
+				}
+			
+			sprintf((void *)buffer_out,"Fin de comparación\r\n");
+			
+			
+		}
+
+
+
+//prg_flash(uint32_t destAdrss, uint16_t cuantos, uint32_t *deDonde)
+
+		//-------------------------------------------------------------------------------------------------------
+		// Comando FYH
+		//-------------------------------------------------------------------------------------------------------
+
+		else if (!memcmp(param1, ".FYH", 4))
+		{
+			sprintf((void *)buffer_out,"Hora Actual %02d:%02d:%02d: %02d-%02d-%04d\r\n",hora,minuto,segundo,dia,mes,year);		
+		}
+		//-------------------------------------------------------------------------------------------------------
+		// Comando BAJa
+		//-------------------------------------------------------------------------------------------------------
+
+		else if (!memcmp(param1, ".BAJ", 4))
+
+		{
+			if (EspejoFlash[0]==0)		//== 0-> ya dado de Alta, !=0 -> no se ha dado de alta 
+			{				
+				EspejoFlash[0]=0xFF;
+				sprintf((void *)buffer_out, "^BAJA OK\r\n");	
+				strcat((void *)buffer_out,MAC_BLE);
+				strcat((void *)buffer_out,"\r\nBLE10\r\n");
+				sprintf (param2,"%02d.%02d.%02d\r\n$", SW_VERSION, SW_REVISION, SW_COMPILATION);
+				strcat((void *)buffer_out,param2);
+				Escribe_en_flash (EspejoFlash,0,0x200);
+
+				sprintf((void *)straux, "AT+BLEADVDATAEX=\"Ares %s BLE10 B\",\"A002\",\"31323334\",1\r\n", MAC_BLE);
+				Send_RS232_ESP_ACK(500,(void *)straux);
+			}
+			else
+			{
+				strcpy((void *)buffer_out,"^BAJA KO: EL DISPOSITIVO YA ESTA DADO DE BAJA\r\n$"); 
+			}
+
+		}
+		//-------------------------------------------------------------------------------------------------------
+		// Comando DEScarga
+		//-------------------------------------------------------------------------------------------------------
+
+		else if (!memcmp(param1, ".DESC", 5))
+
+		{
+			char numeroFichero,limite,tamano,cuantos;
+			uint16_t tamanoCRC;
+			uint32_t offeset,laux;
+			char nombreFichero[32];
+			
+			if (!memcmp(param2, "BOOT", 4))  
+				{
+				strcpy(nombreFichero,"BOOT_BLE10");
+				cuantos=1;
+				tamanoCRC=4094;
+				tamano=1;
+				}
+			else 
+				{
+				strcpy (nombreFichero,"FW_BLE10");
+				cuantos=8;
+				tamanoCRC=8190;
+				tamano=2;
+				}
+			
+			
+			crc_16 = 0xffff;
+			offeset=0;
+			numeroFichero=0;
+			for (x=0;x<cuantos;x++)
+				{
+				Indice_A_buffer_aligned=0;
+				sprintf((void *)straux, "AT+HTTPCLIENT=2,0,\"https://archive.boxbosses.com/firmwares/ble10/%s_%02d.BIN?mac=%s\",,,2\r\n",nombreFichero, numeroFichero,MAC_BLE);
+				Send_RS232_ESP_ACK_delayLargo((void *)straux);
+				if (ErrorEnESP == SI) 	break;
+				laux=0;
+				for (a=0;a<tamano;a++)
+					{
+					sprintf((void *)straux, "AT+FS=0,1,\"%s.BIN\",%d,4096\r\n",nombreFichero,offeset);
+					Send_RS232_ESP_ACK(500,(void *)straux);
+					HAL_Delay(250);
+					PRINTF ("Transmitiendo....\r\n");
+					Recibido_OK_ESP = NO;
+					HAL_UART_Transmit(&huart1, buffer_aligned+laux,4096, 1000);
+					tiempoEsperaRespuesta = 1000;
+					while ((Recibido_OK_ESP == NO)||(tiempoEsperaRespuesta==0)){}
+					if (tiempoEsperaRespuesta==0) ErrorEnESP = SI;
+					laux+=4096;
+					offeset+=4096;
+					}
+				if (x==(cuantos-1))
+					{
+					crc_16 = crc16(buffer_aligned, tamanoCRC, crc_16);
+					crc_16_LEIDO = (buffer_aligned[tamanoCRC+1]*256)+buffer_aligned[tamanoCRC];
+					}
+				else crc_16 = crc16(buffer_aligned, tamanoCRC+2, crc_16);
+				if (ErrorEnESP == SI) 	break;
+				numeroFichero++;
+				HAL_Delay(200);
+				}
+			if (ErrorEnESP == SI) sprintf((void *)buffer_out, "ERROR al realizar la descarga.\r\n");
+			else 
+				{
+				sprintf((void *)buffer_out, "Descarga realizada. (CRC calculado=%04X, CRC leido=%04X)",crc_16,crc_16_LEIDO);
+				if (crc_16==crc_16_LEIDO)
+					{
+					strcat ((void *)buffer_out," DESCARGA OK\r\n");
+					descargaOK=SI;
+					}
+				else
+					{
+					strcat ((void *)buffer_out," ERROR EN DESCARGA !!!!!\r\n");
+					descargaOK=NO;
+					}				
+				}
+		}
+		//-------------------------------------------------------------------------------------------------------
+		// Comando .SSId
+		//-------------------------------------------------------------------------------------------------------
+
+		else if (!memcmp(param1, ".SSI", 4))
+
+		{
+			strcpy (ssid,param2);
+			sprintf((void *)buffer_out, "SSID .- %s\r\n",ssid);
+		}
+		//-------------------------------------------------------------------------------------------------------
+		// Comando .PASsword
+		//-------------------------------------------------------------------------------------------------------
+
+		else if (!memcmp(param1, ".PAS", 4))
+
+		{
+			strcpy (password,param2);
+			sprintf((void *)buffer_out, "Password .- %s\r\n",password);
+		}
+
+
+		//-------------------------------------------------------------------------------------------------------
+		// Comando .DESconectaAP
+		//-------------------------------------------------------------------------------------------------------
+
+		else if (!memcmp(param1, ".DES", 4))
+
+		{
+			sprintf((void *)straux, "AT+CWQAP\r\n");
+			Send_RS232_ESP_ACK(500,(void *)straux);
+			strcpy((void *)buffer_out, "Desconectado a la AP\r\n");
+		}
+
+		//-------------------------------------------------------------------------------------------------------
+		// Comando .CONectaAP
+		//-------------------------------------------------------------------------------------------------------
+
+		else if (!memcmp(param1, ".CON", 4))
+
+		{
+			strcpy((void *)straux, "AT+CWMODE=1\r\n");
+			Send_RS232_ESP_ACK(500,(void *)straux);
+			tengo_IP_WIFI=NO;
+			sprintf((void *)straux, "AT+CWJAP=\"%s\",\"%s\"\r\n",ssid,password);
+			Send_RS232_ESP_ACK(500,(void *)straux);
+			EsperaIPWifi();
+			strcpy((void *)buffer_out, "Conectado a la AP\r\n");
+		}
+
+		//-------------------------------------------------------------------------------------------------------
+		// Comando .WIFIAPROV
+		//-------------------------------------------------------------------------------------------------------
+
+		else if (!memcmp(param1, ".WIFIAPROV", 6))
+
+		{
+
+		if (tengo_IP_ETH  == SI )
+			{
+			strcpy((void *)straux, "AT+BLEINIT=0\r\n");
+			Send_RS232_ESP_ACK(500,(void *)straux);
+			
+			strcpy((void *)straux, "AT+CWINIT=0\r\n");
+			Send_RS232_ESP_ACK(500,(void *)straux);
+ 			
+ 			strcpy((void *)straux, "AT+CWINIT=1\r\n");
+			Send_RS232_ESP_ACK(500,(void *)straux);
+			
+			strcpy((void *)straux, "AT+CWMODE=1\r\n");
+			
+			Send_RS232_ESP_ACK(500,(void *)straux);
+			WIFI_conectado = NO;
+			error_WIFI = NO;
+			tengo_IP_WIFI=NO;
+			sprintf((void *)straux, "AT+CWJAP=\"%s\",\"%s\"\r\n",param2,param3);
+			Send_RS232_ESP_ACK(500,(void *)straux);
+			EsperaIPWifi();
+			while ((WIFI_conectado == NO) && (error_WIFI == NO)){}
+			if (WIFI_conectado == SI)
+				{
+				strcpy((void *)buffer_out,"^WIFIAPROV OK\r\n$");
+				if (desde!=2)						//Desde ESP32.C no lo graba
+					{
+					strcpy (EspejoFlash+0x10,param2);		//SSID en posicion 0x10
+					strcpy (EspejoFlash+0x50,param3);		//PASSWORD en posicion 0x50
+					Escribe_en_flash (EspejoFlash,0,0x200);
+					strcpy (password,param3);
+					strcpy (ssid,param2);
+					}
+				}
+			else 
+				{
+				sprintf((void *)buffer_out,"^WIFIAPROV KO: %c\r\n$",causaError_WIFI);
+				}
+			strcpy((void *)straux, "AT+CWINIT=0\r\n");
+			Send_RS232_ESP_ACK(500,(void *)straux);
+			
+			Activar_BLE();
+		
+			}
+		else
+			{
+				HAL_Delay(500);
+				strcpy((void *)straux, "AT+CWINIT=0\r\n");
+				Send_RS232_ESP_ACK(500,(void *)straux);
+ 				
+ 				strcpy((void *)straux, "AT+CWINIT=1\r\n");
+				Send_RS232_ESP_ACK(500,(void *)straux);
+				
+				strcpy((void *)straux, "AT+CWMODE=1\r\n");
+				Send_RS232_ESP_ACK(500,(void *)straux);
+                        	
+				WIFI_conectado = NO;
+				error_WIFI = NO;
+				tengo_IP_WIFI=NO;
+				sprintf((void *)straux, "AT+CWJAP=\"%s\",\"%s\"\r\n",param2,param3);
+				Send_RS232_ESP_ACK(500,(void *)straux);
+				EsperaIPWifi();
+				while ((WIFI_conectado == NO) && (error_WIFI == NO)){}
+				if (WIFI_conectado == SI)
+					{
+					strcpy((void *)buffer_out,"^WIFIAPROV OK\r\n$");
+					if (desde!=2)						//Desde ESP32.C no lo graba
+						{
+						strcpy (EspejoFlash+0x10,param2);		//SSID en posicion 0x10
+						strcpy (EspejoFlash+0x50,param3);		//PASSWORD en posicion 0x50
+						Escribe_en_flash (EspejoFlash,0,0x200);
+						strcpy (password,param3);
+						strcpy (ssid,param2);
+						}
+					}
+				else 
+					{
+					sprintf((void *)buffer_out,"^WIFIAPROV KO: %c\r\n$",causaError_WIFI);
+					}
+				HAL_Delay(4000);
+			}
+		
+			if (conexionMqttAntesIntentada==NO)
+				{
+				strcpy((void *)straux, "AT+BLEINIT=0\r\n");
+				Send_RS232_ESP_ACK(500,(void *)straux);
+				
+				ConectarMQTT();
+
+				strcpy((void *)straux, "AT+CWINIT=0\r\n");
+				Send_RS232_ESP_ACK(500,(void *)straux);
+ 				
+ 				strcpy((void *)straux, "AT+CWINIT=1\r\n");
+				Send_RS232_ESP_ACK(500,(void *)straux);
+
+				Activar_BLE();
+
+				strcpy((void *)straux, "AT+CWINIT=0\r\n");
+				Send_RS232_ESP_ACK(500,(void *)straux);
+ 				
+ 				strcpy((void *)straux, "AT+CWINIT=1\r\n");
+				Send_RS232_ESP_ACK(500,(void *)straux);
+				
+				strcpy((void *)straux, "AT+CWMODE=1\r\n");
+				Send_RS232_ESP_ACK(500,(void *)straux);
+                        	
+				WIFI_conectado = NO;
+				error_WIFI = NO;
+				tengo_IP_WIFI=NO;
+				sprintf((void *)straux, "AT+CWJAP=\"%s\",\"%s\"\r\n",ssid,password);
+				Send_RS232_ESP_ACK(500,(void *)straux);
+				EsperaIPWifi();
+				
+				}
+		}
+		//-------------------------------------------------------------------------------------------------------
+		// Comando .INFO
+		//-------------------------------------------------------------------------------------------------------
+
+		else if (!memcmp(param1, ".INFO", 6))
+
+		{
+			test_Conexion_ok=NO;
+			sprintf((void *)straux, "AT+HTTPCLIENT=2,0,\"https://archive.boxbosses.com/firmwares/ble10/CONEXION_TEST.TXT\",,,2\r\n", 00);
+			Send_RS232_ESP_ACK(500,(void *)straux);
+			timer10MiliSeg=0;
+			while ((test_Conexion_ok==NO)&& (ErrorEnESP == NO)&& (timer10MiliSeg <4000)){}
+						
+			strcpy((void *)buffer_out, "^BLE10\r\n");	
+			sprintf (param2,"%02d.%02d.%02d\r\n", SW_VERSION, SW_REVISION, SW_COMPILATION);
+			strcat((void *)buffer_out,param2);
+			strcat((void *)buffer_out,MAC_BLE);
+			strcat((void *)buffer_out,"\r\n");
+			if ((IP_WIFI[0]!=0)&&(IP_WIFI[0]!=0xff)) strcat((void *)buffer_out,IP_WIFI);
+			else strcat((void *)buffer_out,"-");
+			strcat((void *)buffer_out,"\r\n");
+			if ((IP_ETH[0]!=0)&&(IP_ETH[0]!=0xff)) strcat((void *)buffer_out,IP_ETH);
+			else strcat((void *)buffer_out,"-");
+			if (test_Conexion_ok == NO) strcat((void *)buffer_out,"\r\nNO CONEXION");
+			else strcat((void *)buffer_out,"\r\nCONEXION OK");
+			if ((ssid[0] == 0xff)||ssid[0] == 0x0) strcat((void *)buffer_out,"\r\n- ");
+			else 
+				{
+				sprintf (straux,"\r\n%s ",ssid);
+				strcat((void *)buffer_out,straux);
+				}
+			if ((password[0] == 0xff)||password[0] == 0x0) strcat((void *)buffer_out,"-");
+			else 
+				{
+				strcat((void *)buffer_out,password);
+				}
+			
+			strcat((void *)buffer_out,"\r\n$");
+		}
+		//-------------------------------------------------------------------------------------------------------
+		// Comando .UPGRADE
+		//-------------------------------------------------------------------------------------------------------
+
+		else if (!memcmp(param1, ".UPGRADE", 8))
+
+		{
+			strcpy((void *)straux, "ATE0\r\n");
+			Send_RS232_ESP_ACK(500,(void *)straux);
+			HAL_Delay(1000);
+
+			AA_Hazupgrade(&huart2,&huart1,&hiwdg);
+		}
+
+		//-------------------------------------------------------------------------------------------------------
+		// Comando .TXTcp
+		//-------------------------------------------------------------------------------------------------------
+
+		else if (!memcmp(param1, ".TXT", 4))
+
+		{
+			b=strlen(param2);
+			WR_en_TCP(param2,b);
+			strcpy((void *)buffer_out, "Texto enviado\r\n");
+		}
+
+		//-------------------------------------------------------------------------------------------------------
+		// Comando .ABRe
+		//-------------------------------------------------------------------------------------------------------
+
+		else if (!memcmp(param1, ".ABR", 4))
+
+		{
+			if ((param2[0]=='1')&&(param2[1]!='0'))
+				{		
+				HAL_GPIO_WritePin(GPIOB, RL1_Pin, GPIO_PIN_SET);
+				HAL_Delay(1500);
+				HAL_GPIO_WritePin(GPIOB, RL1_Pin, GPIO_PIN_RESET);
+				}
+			else if (param2[0]=='2')
+				{		
+				HAL_GPIO_WritePin(GPIOB, RL2_Pin, GPIO_PIN_SET);
+				HAL_Delay(1500);
+				HAL_GPIO_WritePin(GPIOB, RL2_Pin, GPIO_PIN_RESET);
+				}
+			else if (param2[0]=='3')
+				{		
+				HAL_GPIO_WritePin(GPIOA, RL3_Pin, GPIO_PIN_SET);
+				HAL_Delay(1500);
+				HAL_GPIO_WritePin(GPIOA, RL3_Pin, GPIO_PIN_RESET);
+				}
+			else if (param2[0]=='4')
+				{		
+				HAL_GPIO_WritePin(GPIOA, RL4_Pin, GPIO_PIN_SET);
+				HAL_Delay(1500);
+				HAL_GPIO_WritePin(GPIOA, RL4_Pin, GPIO_PIN_RESET);
+				}
+			else if (param2[0]=='5')
+				{		
+				HAL_GPIO_WritePin(GPIOC, RL5_Pin, GPIO_PIN_SET);
+				HAL_Delay(1500);
+				HAL_GPIO_WritePin(GPIOC, RL5_Pin, GPIO_PIN_RESET);
+				}
+			else if (param2[0]=='6')
+				{		
+				HAL_GPIO_WritePin(GPIOA, RL6_Pin, GPIO_PIN_SET);
+				HAL_Delay(1500);
+				HAL_GPIO_WritePin(GPIOA, RL6_Pin, GPIO_PIN_RESET);
+				}
+			else if (param2[0]=='7')
+				{		
+				HAL_GPIO_WritePin(GPIOB, RL7_Pin, GPIO_PIN_SET);
+				HAL_Delay(1500);
+				HAL_GPIO_WritePin(GPIOB, RL7_Pin, GPIO_PIN_RESET);
+				}
+			else if (param2[0]=='8')
+				{		
+				HAL_GPIO_WritePin(GPIOA, RL8_Pin, GPIO_PIN_SET);
+				HAL_Delay(1500);
+				HAL_GPIO_WritePin(GPIOA, RL8_Pin, GPIO_PIN_RESET);
+				}
+			else if (param2[0]=='9')
+				{		
+				HAL_GPIO_WritePin(GPIOB, RL9_Pin, GPIO_PIN_SET);
+				HAL_Delay(1500);
+				HAL_GPIO_WritePin(GPIOB, RL9_Pin, GPIO_PIN_RESET);
+				}
+			else if ((param2[0]=='1')&&(param2[1]=='0'))
+				{		
+				HAL_GPIO_WritePin(GPIOB, RL10_Pin, GPIO_PIN_SET);
+				HAL_Delay(1500);
+				HAL_GPIO_WritePin(GPIOB, RL10_Pin, GPIO_PIN_RESET);
+				}
+			else strcpy((void *)buffer_out, "^ERROR nivel 3 (.ABRe 1..10\r\n$");
+			if ((param2[0]>='1')||(param2[0]<='9')) 
+				{
+				if ((param2[0]=='1')&& (param2[1]=='0')) sprintf((void *)buffer_out, "^Cerradura 10, Abierta\r\n$");
+				else sprintf((void *)buffer_out, "^Cerradura %c, Abierta\r\n$",param2[0]);			
+				}
+			param2[1]=0;
+
+		}
+		//-------------------------------------------------------------------------------------------------------
+		// Comando .ESTado (pulsador,ct1,ct2
+		//-------------------------------------------------------------------------------------------------------
+
+		else if (!memcmp(param1, ".EST", 4))
+
+		{
+			if (!memcmp(param2, "PUL", 3))
+				{		
+				if (HAL_GPIO_ReadPin(GPIOB,PULSADOR_Pin)==0) strcpy((void *)buffer_out, "^PULSADOR.- pulsado\r\n$");
+				else strcpy((void *)buffer_out, "^PULSADOR.- NO pulsado\r\n$");
+				}
+			else if (!memcmp(param2, "CT1", 3))
+				{		
+				if (HAL_GPIO_ReadPin(GPIOB,CT1_Pin)==0) strcpy((void *)buffer_out, "^CT1.- Cerrado\r\n$");
+				else strcpy((void *)buffer_out, "^CT1.- Abierto\r\n$");
+				}
+			else if (!memcmp(param2, "CT2", 3))
+				{		
+				if (HAL_GPIO_ReadPin(GPIOB,CT2_Pin)==0) strcpy((void *)buffer_out, "^CT2.- Cerrado\r\n$");
+				else strcpy((void *)buffer_out, "^CT2.- Abierto\r\n$");
+				}
+			else if (!memcmp(param2, "CT3", 3))
+				{		
+				if (HAL_GPIO_ReadPin(GPIOA,CT3_Pin)==0) strcpy((void *)buffer_out, "^CT3.- Cerrado\r\n$");
+				else strcpy((void *)buffer_out, "^CT3.- Abierto\r\n$");
+				}
+			else if (!memcmp(param2, "CT4", 3))
+				{		
+				if (HAL_GPIO_ReadPin(GPIOB,CT4_Pin)==0) strcpy((void *)buffer_out, "^CT4.- Cerrado\r\n$");
+				else strcpy((void *)buffer_out, "^CT4.- Abierto\r\n$");
+				}
+			else if (!memcmp(param2, "CT5", 3))
+				{		
+				if (HAL_GPIO_ReadPin(GPIOA,CT5_Pin)==0) strcpy((void *)buffer_out, "^CT5.- Cerrado\r\n$");
+				else strcpy((void *)buffer_out, "^CT5.- Abierto\r\n$");
+				}
+			else if (!memcmp(param2, "CT6", 3))
+				{		
+				if (HAL_GPIO_ReadPin(GPIOA,CT6_Pin)==0) strcpy((void *)buffer_out, "^CT6.- Cerrado\r\n$");
+				else strcpy((void *)buffer_out, "^CT6.- Abierto\r\n$");
+				}
+			else if (!memcmp(param2, "CT7", 3))
+				{		
+				if (HAL_GPIO_ReadPin(GPIOA,CT7_Pin)==0) strcpy((void *)buffer_out, "^CT7.- Cerrado\r\n$");
+				else strcpy((void *)buffer_out, "^CT7.- Abierto\r\n$");
+				}
+			else if (!memcmp(param2, "CT8", 3))
+				{		
+				if (HAL_GPIO_ReadPin(GPIOC,CT8_Pin)==0) strcpy((void *)buffer_out, "^CT8.- Cerrado\r\n$");
+				else strcpy((void *)buffer_out, "^CT8.- Abierto\r\n$");
+				}
+			else if (!memcmp(param2, "CT9", 3))
+				{		
+				if (HAL_GPIO_ReadPin(GPIOB,CT9_Pin)==0) strcpy((void *)buffer_out, "^CT9.- Cerrado\r\n$");
+				else strcpy((void *)buffer_out, "^CT9.- Abierto\r\n$");
+				}
+			else if (!memcmp(param2, "CT10", 4))
+				{		
+				if (HAL_GPIO_ReadPin(GPIOD,CT10_Pin)==0) strcpy((void *)buffer_out, "^CT10.- Cerrado\r\n$");
+				else strcpy((void *)buffer_out, "^CT10.- Abierto\r\n$");
+				}
+			else if (!memcmp(param2, "TAMPER", 6))
+				{		
+				if (HAL_GPIO_ReadPin(GPIOD,NC_Pin)==0) strcpy((void *)buffer_out, "^TAMPER.- Cerrado\r\n$");
+				else strcpy((void *)buffer_out, "^TAMPER.- Abierto\r\n$");
+				}
+			else strcpy((void *)buffer_out, "^ERROR nivel 3 (.ESTado PULSADOR/CT1/.../CT10\r\n$");
+
+		}
+
+//		//-------------------------------------------------------------------------------------------------------
+//		// Comando .TODOS ON/OFF nnumeroRele 0/1
+//		//-------------------------------------------------------------------------------------------------------
+//
+//		else if (!memcmp(param1, ".TOD", 4))
+//		{
+//			if (!memcmp(param2, "ON", 2))
+//			{
+//				HAL_GPIO_WritePin(GPIOB, RL1_Pin, GPIO_PIN_SET);
+//				HAL_GPIO_WritePin(GPIOB, RL2_Pin, GPIO_PIN_SET);
+//				HAL_GPIO_WritePin(GPIOA, RL3_Pin, GPIO_PIN_SET);
+//				HAL_GPIO_WritePin(GPIOA, RL4_Pin, GPIO_PIN_SET);
+//				HAL_GPIO_WritePin(GPIOC, RL5_Pin, GPIO_PIN_SET);
+//				HAL_GPIO_WritePin(GPIOA, RL6_Pin, GPIO_PIN_SET);
+//				HAL_GPIO_WritePin(GPIOB, RL7_Pin, GPIO_PIN_SET);
+//				HAL_GPIO_WritePin(GPIOA, RL8_Pin, GPIO_PIN_SET);
+//				HAL_GPIO_WritePin(GPIOB, RL9_Pin, GPIO_PIN_SET);
+//				HAL_GPIO_WritePin(GPIOB, RL10_Pin, GPIO_PIN_SET);
+//			}
+//			else if (!memcmp(param2, "OFF", 3))
+//			{
+//				HAL_GPIO_WritePin(GPIOB, RL1_Pin, GPIO_PIN_RESET);
+//				HAL_GPIO_WritePin(GPIOB, RL2_Pin, GPIO_PIN_RESET);
+//				HAL_GPIO_WritePin(GPIOA, RL3_Pin, GPIO_PIN_RESET);
+//				HAL_GPIO_WritePin(GPIOA, RL4_Pin, GPIO_PIN_RESET);
+//				HAL_GPIO_WritePin(GPIOC, RL5_Pin, GPIO_PIN_RESET);
+//				HAL_GPIO_WritePin(GPIOA, RL6_Pin, GPIO_PIN_RESET);
+//				HAL_GPIO_WritePin(GPIOB, RL7_Pin, GPIO_PIN_RESET);
+//				HAL_GPIO_WritePin(GPIOA, RL8_Pin, GPIO_PIN_RESET);
+//				HAL_GPIO_WritePin(GPIOB, RL9_Pin, GPIO_PIN_RESET);
+//				HAL_GPIO_WritePin(GPIOB, RL10_Pin, GPIO_PIN_RESET);
+//			}
+//			else strcpy((void *)buffer_out, "^ERROR nivel 3 (.TODOS ON/OFF\r\n$");
+//		}
+//
+//		//-------------------------------------------------------------------------------------------------------
+//		// Comando .RELe nnumeroRele 0/1
+//		//-------------------------------------------------------------------------------------------------------
+//
+//		else if (!memcmp(param1, ".REL", 4))
+//
+//		{
+//			if (param2[0]=='1')
+//				{
+//				if (param3[0]=='0')
+//					{
+//						HAL_GPIO_WritePin(GPIOB, RL1_Pin, GPIO_PIN_RESET);
+//						strcpy((void *)buffer_out, "^Rele1 Off\r\n$");
+//					}
+//				else if (param3[0]=='1')
+//					{
+//						HAL_GPIO_WritePin(GPIOB, RL1_Pin, GPIO_PIN_SET);
+//						strcpy((void *)buffer_out, "^Rele1 On\r\n$");
+//					}
+//				else strcpy((void *)buffer_out, "^ERROR nivel 3 (.REL 1 0/1)\r\n$");
+//				}
+//			
+//			else if (param2[0]=='2')
+//				{
+//				if (param3[0]=='0')
+//					{
+//						HAL_GPIO_WritePin(GPIOB, RL2_Pin, GPIO_PIN_RESET);
+//						strcpy((void *)buffer_out, "^Rele2 Off\r\n$");
+//					}
+//				else if (param3[0]=='1')
+//					{
+//						HAL_GPIO_WritePin(GPIOB, RL2_Pin, GPIO_PIN_SET);
+//						strcpy((void *)buffer_out, "^Rele2 On\r\n$");
+//					}
+//				else strcpy((void *)buffer_out, "^ERROR nivel 3 (.REL 2 0/1)\r\n$");
+//				}
+//
+//			else strcpy((void *)buffer_out, "^ERROR nivel 2 (.REL 1/2 0/1)\r\n$");
+//		}
+		//-------------------------------------------------------------------------------------------------------
+		// Comando .ACTUALIZA
+		//-------------------------------------------------------------------------------------------------------
+
+		else if (!memcmp(param1, ".ACTUALIZA", 10))
+
+		{
+			actualizacionPendiente=SI;;
+		}
+
+		//-------------------------------------------------------------------------------------------------------
+		// Comando .RESet
+		//-------------------------------------------------------------------------------------------------------
+
+		else if (!memcmp(param1, ".RES", 4))
+
+		{
+			NVIC_SystemReset();
+		}
+
+		//-------------------------------------------------------------------------------------------------------
+		// Comando .ESP SEND
+		//-------------------------------------------------------------------------------------------------------
+
+		else if (!memcmp(param1, ".ESP", 4))
+		{
+
+			if (!memcmp(param2, "SEND", 4))
+			{
+				paux = buffer_in + strlen((void *)param1) + strlen((void *)param2) + 2;
+
+				for (i = 0;; i++)
+				{
+					entrada[i] = *paux;
+					paux++;
+					if (entrada[i] == 0xd)
+					{
+						entrada[i + 1] = 0xA;
+						entrada[i + 2] = 0;
+						break;
+					}
+				}
+				// MonitorizaRS232_ESP=SI;
+				strcpy((void *)BufferTX_ESP, (void *)entrada);
+				HAL_UART_Transmit(&huart1, (void *)BufferTX_ESP, strlen((void *)BufferTX_ESP), 100);
+				sprintf((void *)buffer_out, "Enviado al ESP: %s\r\n", BufferTX_ESP);
+			}
+			else if (!memcmp(param2, "RST", 3))
+			{
+				Init_ESP32();
+				strcpy((void *)buffer_out, "ESP32 Reset OK\r\n");
+			}
+			else
+			{
+				strcpy((void *)buffer_out, "ERROR nivel 2 \r\n");
+			}
+		}
+
+		//-------------------------------------------------------------------------------------------------------
+		//-------------------------------------------------------------------------------------------------------
+		//-------------------------------------------------------------------------------------------------------
+		//-------------------------------------------------------------------------------------------------------
+
+		else
+		{
+			strcpy((void *)buffer_out, "ERROR Nivel 2\r\n");
+		}
+	}
+	else
+	{
+		strcpy((void *)buffer_out, "ERROR Nivel 1\r\n");
+	}
+
+	a = strlen((void *)buffer_out);
+	return (a);
+}
+
+/*************************************************************************
+
+	Pinta_VERSION()
+ Carga en el "buffer_out" la leyenda de VERSION, utilizada en CONFIGURA.C
+ y MAIN.C
+
+*************************************************************************/
+void Pinta_VERSION()
+{
+
+	sprintf((void *)buffer_out, "^\r\n[VERSION :%02d.%02d.%02d BLE10]\r\n", SW_VERSION, SW_REVISION, SW_COMPILATION);
+	strcat((void *)buffer_out, "(@Ares Seguridad '23) \r\n");
+	strcat((void *)buffer_out, __DATE__);
+	strcat((void *)buffer_out, " ");
+	strcat((void *)buffer_out, __TIME__);
+	strcat((void *)buffer_out, " \r\n$");
+}
+
